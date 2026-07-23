@@ -40,10 +40,25 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
     if (docRecord.filePath && fs.existsSync(docRecord.filePath)) {
       try {
         const stat = fs.statSync(docRecord.filePath);
-        if (stat.size < 5 * 1024 * 1024) {
-          fileContent = fs.readFileSync(docRecord.filePath, 'utf8');
+        if (stat.size < 15 * 1024 * 1024) {
+          const buffer = fs.readFileSync(docRecord.filePath);
+          const ext = path.extname(docRecord.filePath).toLowerCase();
+          if (['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.zip'].includes(ext)) {
+            // Extract human-readable text strings from binary file buffer
+            const rawStr = buffer.toString('latin1');
+            const matches = rawStr.match(/[\x20-\x7E\t\r\n]{4,}/g);
+            if (matches && matches.length > 0) {
+              fileContent = matches.filter(m => !m.includes('/Type') && !m.includes('/Page') && !m.includes('endobj')).join(' ').slice(0, 50000);
+            }
+          } else {
+            fileContent = buffer.toString('utf8');
+          }
         }
       } catch (e) {}
+    }
+
+    if (!fileContent || !fileContent.trim()) {
+      fileContent = `Document: ${docRecord.title}\nType: ${docRecord.sourceType}\nContent: Workplace document file and specifications for ${docRecord.title}.`;
     }
 
     const baseUrl = (process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '');
@@ -56,7 +71,7 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
         title: docRecord.title,
         source_type: docRecord.sourceType,
         org_id: docRecord.orgId.toString(),
-        content: (fileContent && fileContent.trim()) ? fileContent : `Document file: ${docRecord.title}`
+        content: fileContent
       })
     });
 

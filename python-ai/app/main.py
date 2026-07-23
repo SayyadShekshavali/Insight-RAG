@@ -262,17 +262,19 @@ def start_auto_sync_thread():
     threading.Thread(target=auto_sync_uploads_directory, daemon=True).start()
 
 # POST: Index uploaded file
-@app.post("/index")
-def index_document(payload: IndexRequest):
     try:
-        if payload.content and payload.content.strip():
+        if payload.content and isinstance(payload.content, str) and payload.content.strip():
             text = payload.content
-        elif payload.file_path and os.path.exists(payload.file_path):
+        elif payload.file_path and isinstance(payload.file_path, str) and os.path.exists(payload.file_path):
             text = extract_text_from_file(payload.file_path, payload.source_type)
         else:
-            text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Source code and architecture file for {payload.title}."
+            text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace file and specifications for {payload.title}."
     except Exception:
-        text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Source code and architecture file for {payload.title}."
+        text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace file and specifications for {payload.title}."
+
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text).strip()
+    if not text:
+        text = f"Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace document specification."
             
     try:
         chunks = get_text_chunks(text, chunk_size=1500, overlap=200)[:20]
