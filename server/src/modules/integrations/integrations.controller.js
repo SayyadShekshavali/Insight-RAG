@@ -1144,7 +1144,8 @@ const runRealNotionSync = async (orgId, token, fileIds = []) => {
     let pages = data.results || [];
 
     if (Array.isArray(fileIds) && fileIds.length > 0) {
-      pages = pages.filter(p => fileIds.includes(p.id));
+      const cleanFileIds = fileIds.map(id => String(id).replace(/-/g, '').toLowerCase());
+      pages = pages.filter(p => cleanFileIds.includes(String(p.id).replace(/-/g, '').toLowerCase()));
     }
 
     logger.info(`Found ${pages.length} Notion pages/databases to sync`);

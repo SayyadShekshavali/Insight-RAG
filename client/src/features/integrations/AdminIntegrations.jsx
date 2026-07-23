@@ -196,7 +196,11 @@ function AdminIntegrations() {
     }
     setSyncingNotion(true);
     try {
-      const res = await api.post('/integrations/sync/notion', { fileIds: selectedNotionIds });
+      const selectedMetas = notionFiles.filter(f => selectedNotionIds.includes(f.id));
+      const res = await api.post('/integrations/sync/notion', { 
+        fileIds: selectedNotionIds,
+        fileMetas: selectedMetas 
+      });
       if (res.ok) {
         setShowNotionModal(false);
         fetchIntegrations();
