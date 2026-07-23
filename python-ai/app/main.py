@@ -421,10 +421,18 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             if t and t not in unique_docs:
                 unique_docs[t] = st
 
-    # 2.5 Intercept connected workspace resources / files inventory query directly from Qdrant storage
-    q_clean = question.lower().strip()
+    # 2.5 Clean query string (strip quotes, punctuation, whitespace)
+    q_clean = re.sub(r'[^a-zA-Z0-9\s]', '', question.lower()).strip()
     
-    # Check if query is asking about file/resource count or inventory (including typos like 'fiels')
+    # Merge MongoDB document database metadata with Qdrant vector database
+    if payload.documents and isinstance(payload.documents, list):
+        for d in payload.documents:
+            t = d.get("title")
+            st = d.get("source_type", "file")
+            if t and t not in unique_docs:
+                unique_docs[t] = st
+
+    # Check if query is asking about file/resource count or inventory
     is_inventory_query = (
         "fiels" in q_clean or
         any(phrase in q_clean for phrase in [
@@ -434,18 +442,10 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             "how many resources", "how many files", "how many documents", "what are they", "what are connected",
             "total resources", "total files", "all indexed files", "all files across", "list all files", "list indexed documents", "all documents",
             "how many fiels", "many fiels", "how many file", "many file", "files count", "file count", "count of files",
-            "number of files", "number of fiels", "how many docs", "total docs"
+            "number of files", "number of fiels", "how many docs", "total docs", "how many", "connected"
         ]) or
-        bool(re.search(r'\b(how many|count|number of|total|list|show)\b.*\b(file|files|fiel|fiels|doc|docs|resource|resources)\b', q_clean))
+        bool(re.search(r'\b(how many|count|number of|total|list|show)\b', q_clean))
     )
-    
-    # Merge MongoDB document database metadata with Qdrant vector database
-    if payload.documents and isinstance(payload.documents, list):
-        for d in payload.documents:
-            t = d.get("title")
-            st = d.get("source_type", "file")
-            if t and t not in unique_docs:
-                unique_docs[t] = st
 
     if is_inventory_query:
         if not unique_docs:
@@ -466,7 +466,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         for word in msg.split(" "):
             yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
             await asyncio.sleep(0.01)
-        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each file in detail', 'What is inside Job_Application_Tracker.xlsx?']})}\n\n"
+        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each file in detail', 'What is inside AMEx_Resume.pdf?']})}\n\n"
         return
 
 
@@ -671,13 +671,30 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
         if not top_matches:
-            mock_text = (
-                "I could not locate relevant information in the connected workspace documents to answer your question. "
-                "Could you please elaborate more on your question or specify what detail you need so I can search better?"
-            )
-            for word in mock_text.split(" "):
+            # Check if any MongoDB document title matches keywords in the question
+            matching_docs = []
+            if payload.documents and isinstance(payload.documents, list):
+                for d in payload.documents:
+                    title_clean = d.get("title", "").lower()
+                    if any(k in title_clean for k in q_keywords if len(k) > 2) or any(k in title_clean for k in search_query.lower().split(" ") if len(k) > 2 and k not in STOP_WORDS):
+                        matching_docs.append(d)
+
+            if matching_docs:
+                lines = [f"Here is the workspace document information for your query **\"{question}\"**:\n"]
+                for idx, md in enumerate(matching_docs[:5], 1):
+                    lines.append(f"**{idx}. {md.get('title')}** (`{md.get('source_type', 'file').upper()}`)")
+                    lines.append(f"Status: `{md.get('indexing_status', 'indexed').upper()}`")
+                    lines.append(f"Source: {md.get('source_type', 'file').capitalize()} Integration\n")
+                msg = "\n".join(lines)
+            else:
+                msg = (
+                    "I could not locate relevant information in the connected workspace documents to answer your question. "
+                    "Could you please elaborate more on your question or specify what detail you need so I can search better?"
+                )
+
+            for word in msg.split(" "):
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(0.01)
         else:
             synthesis_lines = [f"Based on your connected workspace documents, here is the relevant information for **\"{question}\"**:\n"]
             for idx, match in enumerate(top_matches):
