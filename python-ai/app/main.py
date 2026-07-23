@@ -425,8 +425,8 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     q_clean = re.sub(r'[^a-zA-Z0-9\s]', '', question.lower()).strip()
     
     # Merge MongoDB document database metadata with Qdrant vector database
-    if payload.documents and isinstance(payload.documents, list):
-        for d in payload.documents:
+    if documents and isinstance(documents, list):
+        for d in documents:
             t = d.get("title")
             st = d.get("source_type", "file")
             if t and t not in unique_docs:
@@ -673,8 +673,8 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         if not top_matches:
             # Check if any MongoDB document title matches keywords in the question
             matching_docs = []
-            if payload.documents and isinstance(payload.documents, list):
-                for d in payload.documents:
+            if documents and isinstance(documents, list):
+                for d in documents:
                     title_clean = d.get("title", "").lower()
                     if any(k in title_clean for k in q_keywords if len(k) > 2) or any(k in title_clean for k in search_query.lower().split(" ") if len(k) > 2 and k not in STOP_WORDS):
                         matching_docs.append(d)
