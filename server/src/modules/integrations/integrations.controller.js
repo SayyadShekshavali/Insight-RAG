@@ -1598,7 +1598,34 @@ export const getGDriveFiles = async (req, res) => {
     return res.status(500).json({ error: 'InternalServerError', message: 'Failed to list Google Drive files.' });
   }
 };
+export const connectGitHubToken = async (req, res) => {
+  try {
+    const { orgId } = req.user;
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'Token is required' });
 
+    const cleanToken = token.trim();
+    await Integration.findOneAndUpdate(
+      { orgId, sourceType: 'github' },
+      {
+        status: 'connected',
+        credentials: {
+          accessToken: cleanToken,
+          lastSyncTime: new Date()
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    // Trigger immediate background sync with real GitHub token
+    runRealGitHubSync(orgId, cleanToken);
+
+    return res.json({ message: 'GitHub token connected and repository sync started' });
+  } catch (err) {
+    logger.error(`Error connecting GitHub token: ${err.message}`);
+    return res.status(500).json({ error: 'InternalServerError', message: 'Failed to connect GitHub token.' });
+  }
+};
 export const connectNotionToken = async (req, res) => {
   try {
     const { orgId } = req.user;
