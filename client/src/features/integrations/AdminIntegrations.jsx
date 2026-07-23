@@ -696,8 +696,48 @@ function AdminIntegrations() {
 
                           <div className="max-h-[260px] overflow-y-auto border border-border-hairline/45 rounded-control divide-y divide-border-hairline/30 bg-background-sidebar">
                             {filtered.length === 0 ? (
-                              <div className="p-4 text-center text-xs text-text-secondary">
-                                No matching Notion pages found.
+                              <div className="p-4 space-y-3 text-left">
+                                <div className="rounded border border-brand-teal/30 bg-brand-teal/5 p-3 text-xs space-y-2">
+                                  <p className="font-semibold text-brand-teal flex items-center gap-1.5">
+                                    <BookOpen className="h-4 w-4 shrink-0" />
+                                    No shared Notion pages detected in this workspace yet.
+                                  </p>
+                                  <div className="text-[11px] text-text-secondary space-y-1 leading-relaxed">
+                                    <p><strong>Option A: Connect via Notion Integration Token</strong></p>
+                                    <p>Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-brand-teal underline">notion.so/my-integrations</a>, paste your secret token below, and click Connect & Scan.</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <input
+                                    type="password"
+                                    value={customNotionInput}
+                                    onChange={(e) => setCustomNotionInput(e.target.value)}
+                                    placeholder="Paste Notion Secret Token (secret_...)"
+                                    className="flex-1 rounded border border-border-hairline bg-background-page px-3 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:border-brand-teal focus:outline-none font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleAddCustomNotionPage}
+                                    disabled={!customNotionInput.trim()}
+                                    className="rounded bg-brand-teal px-3 py-1.5 text-xs font-semibold text-background-page hover:bg-brand-teal-light disabled:opacity-50 transition-colors whitespace-nowrap"
+                                  >
+                                    Connect & Scan
+                                  </button>
+                                </div>
+
+                                <div className="text-[11px] text-text-tertiary space-y-1 border-t border-border-hairline/30 pt-2">
+                                  <p><strong>Option B: Grant Access in Notion</strong></p>
+                                  <p>1. Open your page/database in Notion.</p>
+                                  <p>2. Click <code>...</code> (top right) &rarr; <code>Add connections</code> &rarr; select Insight RAG.</p>
+                                  <button
+                                    type="button"
+                                    onClick={openNotionPicker}
+                                    className="mt-1.5 text-xs text-brand-teal font-medium hover:underline flex items-center gap-1"
+                                  >
+                                    Re-scan Workspace Pages
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               filtered.map(file => {
