@@ -297,6 +297,7 @@ export const oauthCallback = async (req, res) => {
               { upsert: true, new: true }
             );
             logger.info('Successfully exchanged code and registered real GitHub OAuth integration');
+            runRealGitHubSync(orgId, parsed.access_token);
           } else {
             logger.error('GitHub token exchange failed: ' + JSON.stringify(parsed));
             await Integration.findOneAndUpdate(
@@ -569,6 +570,7 @@ export const oauthCallback = async (req, res) => {
           { upsert: true, new: true }
         );
         logger.info('Successfully registered real Notion OAuth integration');
+        runRealNotionSync(orgId, tokenData.access_token);
       } else {
         logger.error(`Notion token exchange failed: ${JSON.stringify(tokenData)}`);
         await Integration.findOneAndUpdate(
@@ -804,7 +806,7 @@ const githubFetch = (urlPath, token) => {
 const runRealGitHubSync = async (orgId, token) => {
   try {
     logger.info('Fetching user GitHub repositories...');
-    const repos = await githubFetch('/user/repos?per_page=2&sort=updated', token);
+    const repos = await githubFetch('/user/repos?per_page=100&sort=updated', token);
     
     const uDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uDir)) fs.mkdirSync(uDir, { recursive: true });
