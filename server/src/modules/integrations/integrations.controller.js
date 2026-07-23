@@ -1599,54 +1599,65 @@ export const getGDriveFiles = async (req, res) => {
   }
 };
 
+export const connectNotionToken = async (req, res) => {
+  try {
+    const { orgId } = req.user;
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'Token is required' });
+
+    const cleanToken = token.trim();
+    await Integration.findOneAndUpdate(
+      { orgId, sourceType: 'notion' },
+      {
+        status: 'connected',
+        credentials: {
+          accessToken: cleanToken,
+          lastSyncTime: new Date()
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    // Trigger immediate background sync with real token
+    runRealNotionSync(orgId, cleanToken);
+
+    return res.json({ message: 'Notion token connected and workspace sync started' });
+  } catch (err) {
+    logger.error(`Error connecting Notion token: ${err.message}`);
+    return res.status(500).json({ error: 'InternalServerError', message: 'Failed to connect Notion token.' });
+  }
+};
+
 export const getNotionFiles = async (req, res) => {
   try {
     const { orgId } = req.user;
     let integration = await Integration.findOne({ orgId, sourceType: 'notion' });
 
-    // Auto-ensure connection state if not already connected
-    if (!integration) {
-      integration = new Integration({
-        orgId,
-        sourceType: 'notion',
-        status: 'connected',
-        credentials: {
-          accessToken: 'mock-oauth-token-notion',
-          lastSyncTime: new Date()
+    if (integration && integration.credentials && integration.credentials.accessToken) {
+      const token = integration.credentials.accessToken;
+      if (!token.startsWith('mock-') && token !== 'notion_mock_token') {
+        try {
+          const resData = await notionFetch('/search', token, 'POST', { page_size: 50 });
+          const pages = (resData.results || []).map(p => {
+            let title = 'Untitled Page';
+            if (p.properties) {
+              const titleProp = p.properties.title || p.properties.Name || p.properties.name;
+              if (titleProp && titleProp.title && Array.isArray(titleProp.title) && titleProp.title.length > 0) {
+                title = titleProp.title.map(t => t.plain_text).join('');
+              }
+            }
+            return {
+              id: p.id,
+              name: title,
+              type: p.object === 'database' ? 'Database' : 'Workspace Page',
+              size: `${(Math.random() * 8 + 1).toFixed(1)} KB`,
+              lastModified: p.last_edited_time ? new Date(p.last_edited_time).toLocaleDateString() : 'Recently'
+            };
+          });
+          if (pages.length > 0) return res.json(pages);
+        } catch (err) {
+          logger.error(`Failed to fetch real Notion pages: ${err.message}`);
         }
-      });
-      await integration.save();
-      logger.info(`Auto-connected Notion integration for org ${orgId}`);
-    } else if (integration.status !== 'connected') {
-      integration.status = 'connected';
-      await integration.save();
-    }
-
-    if (integration.credentials && integration.credentials.accessToken && !integration.credentials.accessToken.startsWith('mock-')) {
-      try {
-        const token = integration.credentials.accessToken;
-        const resData = await notionFetch('/search', token, 'POST', {
-          filter: { value: 'page', property: 'object' },
-          page_size: 50
-        });
-        const pages = (resData.results || []).map(p => {
-          let title = 'Untitled Page';
-          if (p.properties && p.properties.title && p.properties.title.title && p.properties.title.title[0]) {
-            title = p.properties.title.title[0].plain_text;
-          } else if (p.properties && p.properties.Name && p.properties.Name.title && p.properties.Name.title[0]) {
-            title = p.properties.Name.title[0].plain_text;
-          }
-          return {
-            id: p.id,
-            name: title,
-            type: p.object === 'database' ? 'Database' : 'Workspace Page',
-            size: `${(Math.random() * 8 + 1).toFixed(1)} KB`,
-            lastModified: p.last_edited_time ? new Date(p.last_edited_time).toLocaleDateString() : 'Recently'
-          };
-        });
-        if (pages.length > 0) return res.json(pages);
-      } catch (err) {
-        logger.error(`Failed to fetch real Notion pages: ${err.message}`);
       }
     }
 

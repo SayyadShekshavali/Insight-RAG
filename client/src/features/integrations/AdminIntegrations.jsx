@@ -59,13 +59,32 @@ function AdminIntegrations() {
 
   const [customNotionInput, setCustomNotionInput] = useState('');
 
-  const handleAddCustomNotionPage = () => {
+  const handleAddCustomNotionPage = async () => {
     if (!customNotionInput.trim()) return;
-    const cleanName = customNotionInput.trim();
+    const cleanInput = customNotionInput.trim();
+
+    // If input is a Notion Internal Integration Secret / API key
+    if (cleanInput.startsWith('secret_') || cleanInput.startsWith('ntn_') || cleanInput.length > 30) {
+      setFetchingNotion(true);
+      try {
+        const res = await api.post('/integrations/notion/connect-key', { token: cleanInput });
+        if (res.ok) {
+          await openNotionPicker();
+          setCustomNotionInput('');
+          alert("Real Notion API key connected! Workspace pages loaded.");
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to connect Notion key:", err);
+      } finally {
+        setFetchingNotion(false);
+      }
+    }
+
     const newId = 'custom-notion-' + Date.now();
     const newPage = {
       id: newId,
-      name: cleanName.includes('notion.so') ? cleanName.split('/').pop().replace(/-/g, ' ') : cleanName,
+      name: cleanInput.includes('notion.so') ? cleanInput.split('/').pop().replace(/-/g, ' ') : cleanInput,
       type: 'Custom Notion Page',
       size: '12.4 KB',
       lastModified: 'Just now'
