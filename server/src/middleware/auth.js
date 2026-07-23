@@ -26,7 +26,8 @@ export const requireAuth = (req, res, next) => {
       });
     }
     
-    jwt.verify(token, process.env.JWT_ACCESS_SECRET, (err, decoded) => {
+    const accessSecret = process.env.JWT_ACCESS_SECRET || 'dev-access-secret-32-chars-at-least-please-change-in-production';
+    jwt.verify(token, accessSecret, (err, decoded) => {
       if (err) {
         if (err.name === 'TokenExpiredError') {
           return res.status(401).json({

@@ -19,8 +19,11 @@ const generateTokens = (user) => {
     orgId: user.orgId
   };
 
-  const accessToken = jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: '30d' });
-  const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: '90d' });
+  const accessSecret = process.env.JWT_ACCESS_SECRET || 'dev-access-secret-32-chars-at-least-please-change-in-production';
+  const refreshSecret = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-32-chars-at-least-please-change-in-production';
+
+  const accessToken = jwt.sign(payload, accessSecret, { expiresIn: '30d' });
+  const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: '90d' });
 
   return { accessToken, refreshToken };
 };
