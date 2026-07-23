@@ -103,7 +103,12 @@ export const uploadDocument = async (req, res) => {
     // Move file to final uploads directory
     const finalFilename = `${Date.now()}-${originalname}`;
     const finalPath = path.join(UPLOADS_DIR, finalFilename);
-    fs.renameSync(tempPath, finalPath);
+    try {
+      fs.renameSync(tempPath, finalPath);
+    } catch (renameErr) {
+      fs.copyFileSync(tempPath, finalPath);
+      try { fs.unlinkSync(tempPath); } catch (e) {}
+    }
 
     // Save record to MongoDB
     const newDoc = new Document({

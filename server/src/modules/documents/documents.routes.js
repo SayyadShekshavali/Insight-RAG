@@ -16,7 +16,7 @@ const router = Router();
 
 router.get('/', requireAuth, getDocuments);
 router.get('/:id', requireAuth, getDocumentById);
-router.post('/upload', requireAuth, requireAdmin, upload.single('file'), uploadDocument);
+router.post('/upload', requireAuth, upload.single('file'), uploadDocument);
 router.post('/reindex/:id', requireAuth, requireAdmin, reindexDocument);
 router.delete('/:id', requireAuth, requireAdmin, deleteDocument);
 
