@@ -278,7 +278,7 @@ function AdminDocuments() {
       }, 300);
 
       try {
-        const res = await fetch('/api/documents/upload', {
+        const res = await fetch(`${API_BASE}/documents/upload`, {
           method: 'POST',
           body: formData,
           headers: {

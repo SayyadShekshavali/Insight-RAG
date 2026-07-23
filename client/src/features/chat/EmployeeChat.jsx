@@ -7,7 +7,7 @@ import {
   MessageSquare, Loader, Sparkles, AlertCircle, Bookmark, Star
 } from 'lucide-react';
 import { selectAccessToken, selectCurrentUser } from '../../store/authSlice.js';
-import { api } from '../../lib/api.js';
+import { api, API_BASE } from '../../lib/api.js';
 
 // Helper component for citation icons
 const SourceIcon = ({ type, className = "h-3.5 w-3.5" }) => {
@@ -110,7 +110,7 @@ function EmployeeChat() {
     setStreamingFollowUps([]);
 
     try {
-      const response = await fetch('/api/chat/ask', {
+      const response = await fetch(`${API_BASE}/chat/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
