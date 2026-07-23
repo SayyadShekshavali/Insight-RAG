@@ -53,7 +53,7 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
         title: docRecord.title,
         source_type: docRecord.sourceType,
         org_id: docRecord.orgId.toString(),
-        content: fileContent || undefined
+        content: (fileContent && fileContent.trim()) ? fileContent : `Document file: ${docRecord.title}`
       })
     });
 

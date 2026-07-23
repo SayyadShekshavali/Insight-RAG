@@ -678,7 +678,7 @@ const triggerPythonIndexing = async (docRecord) => {
         title: docRecord.title,
         source_type: docRecord.sourceType,
         org_id: docRecord.orgId.toString(),
-        content: fileContent || undefined
+        content: (fileContent && fileContent.trim()) ? fileContent : `Repository source code file: ${docRecord.title}`
       })
     });
 
@@ -882,33 +882,36 @@ const runRealGitHubSync = async (orgId, token) => {
               }
             }
 
-            if (rawContent && rawContent.trim()) {
-              const randSuffix = Math.random().toString(36).slice(-5);
-              const cleanFilename = `github-${repoName}-${randSuffix}-${path.basename(entry.path)}`.replace(/[^a-zA-Z0-9.-]/g, '_');
-              const filePath = path.join(uDir, `${Date.now()}-${cleanFilename}`);
-              fs.writeFileSync(filePath, rawContent, 'utf8');
-
-              let doc = await Document.findOne({ orgId, title: `${repoName}/${entry.path}` });
-              if (!doc) {
-                doc = new Document({
-                  title: `${repoName}/${entry.path}`,
-                  sourceType: 'github',
-                  orgId,
-                  filePath,
-                  fileSize: Buffer.byteLength(rawContent),
-                  indexingStatus: 'processing'
-                });
-              } else {
-                if (doc.filePath && fs.existsSync(doc.filePath)) {
-                  try { fs.unlinkSync(doc.filePath); } catch (e) {}
-                }
-                doc.filePath = filePath;
-                doc.fileSize = Buffer.byteLength(rawContent);
-                doc.indexingStatus = 'processing';
-              }
-              await doc.save();
-              await triggerPythonIndexing(doc);
+            if (!rawContent || !rawContent.trim()) {
+              rawContent = `Repository file: ${repoName}/${entry.path}\nSource: GitHub Integration`;
             }
+
+            const randSuffix = Math.random().toString(36).slice(-5);
+            const cleanFilename = `github-${repoName}-${randSuffix}-${path.basename(entry.path)}`.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const filePath = path.join(uDir, `${Date.now()}-${cleanFilename}`);
+            fs.writeFileSync(filePath, rawContent, 'utf8');
+
+            let doc = await Document.findOne({ orgId, title: `${repoName}/${entry.path}` });
+            if (!doc) {
+              doc = new Document({
+                title: `${repoName}/${entry.path}`,
+                sourceType: 'github',
+                orgId,
+                filePath,
+                fileSize: Buffer.byteLength(rawContent),
+                indexingStatus: 'processing'
+              });
+            } else {
+              if (doc.filePath && fs.existsSync(doc.filePath)) {
+                try { fs.unlinkSync(doc.filePath); } catch (e) {}
+              }
+              doc.filePath = filePath;
+              doc.fileSize = Buffer.byteLength(rawContent);
+              doc.indexingStatus = 'processing';
+            }
+            await doc.save();
+            await triggerPythonIndexing(doc);
+            await new Promise(r => setTimeout(r, 50));
           } catch (fileErr) {
             logger.error(`Error syncing file ${entry.path} in ${repoName}: ${fileErr.message}`);
           }
