@@ -816,8 +816,9 @@ const githubFetch = (urlPath, token) => {
 // Real GitHub Sync Background Crawler
 const runRealGitHubSync = async (orgId, token) => {
   try {
-    logger.info('Fetching user GitHub repositories...');
-    const repos = await githubFetch('/user/repos?per_page=100&sort=updated', token);
+    logger.info('Fetching user GitHub repositories (crawling 2 most recent)...');
+    const allRepos = await githubFetch('/user/repos?per_page=100&sort=updated', token);
+    const repos = Array.isArray(allRepos) ? allRepos.slice(0, 2) : [];
     
     const uDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uDir)) fs.mkdirSync(uDir, { recursive: true });
