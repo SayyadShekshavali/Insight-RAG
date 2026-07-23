@@ -647,30 +647,14 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                                     pass
                     break
                 elif res.status_code in [429, 503]:
-                    retry_seconds = 8.0
-                    try:
-                        err_json = res.json()
-                        details = err_json.get("error", {}).get("details", [])
-                        for d in details:
-                            if "retryDelay" in d:
-                                retry_seconds = float(d["retryDelay"].replace("s", "")) + 1.5
-                    except Exception:
-                        pass
-                    
-                    status_text = f"\n\n*(Gemini API {res.status_code}. Retrying in {int(retry_seconds)} seconds...)*\n\n"
-                    yield f"data: {json.dumps({'event': 'token', 'text': status_text})}\n\n"
-                    print(f"Gemini streaming status error {res.status_code}. Retrying in {retry_seconds} seconds (attempt {attempt+1}/4)...")
-                    await asyncio.sleep(retry_seconds)
-                    continue
+                    # On 429/503 rate limits, instantly stream extracted RAG content from vector store without long delays
+                    api_key = None
+                    break
                 else:
                     raise Exception(f"Gemini streaming status error: {res.status_code}")
             except Exception as e:
-                if attempt == 3:
-                    yield f"data: {json.dumps({'event': 'token', 'text': f'Error calling Gemini API: {str(e)}. Falling back to local summarizer.'})}\n\n"
-                    # Fallback to local summarizing below
-                    api_key = None
-                else:
-                    await asyncio.sleep(2)
+                api_key = None
+                break
             
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
