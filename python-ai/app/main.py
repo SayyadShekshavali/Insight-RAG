@@ -173,21 +173,18 @@ def generate_embedding(text: str) -> list:
     max_attempts = 2
     for attempt in range(max_attempts):
         try:
-            res = requests.post(url, json=payload, timeout=3)
+            res = requests.post(url, json=payload, timeout=1.5)
             if res.status_code == 200:
                 return res.json()["embedding"]["values"]
             elif res.status_code == 429:
-                print(f"Gemini embedding rate limited (429). Retrying quickly in 0.5s (attempt {attempt+1}/{max_attempts})...")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 continue
             else:
-                raise Exception(f"Gemini API error: {res.text}")
-        except Exception as e:
+                break
+        except Exception:
             if attempt == max_attempts - 1:
-                import random
-                random.seed(hash(text))
-                return [random.uniform(-0.1, 0.1) for _ in range(3072)]
-            time.sleep(0.5)
+                break
+            time.sleep(0.2)
 
     import random
     random.seed(hash(text))
@@ -276,13 +273,16 @@ def index_document(payload: IndexRequest):
         text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Source code and architecture file for {payload.title}."
             
     try:
-        chunks = get_text_chunks(text)
+        chunks = get_text_chunks(text, chunk_size=1500, overlap=200)[:20]
         points = []
-        for idx, chunk in enumerate(chunks):
+
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def process_chunk(item):
+            idx, chunk = item
             vector = generate_embedding(chunk)
             point_id = f"{payload.document_id}-{idx}"
-            
-            points.append(PointStruct(
+            return PointStruct(
                 id=abs(int(hashlib.md5(point_id.encode()).hexdigest(), 16)) % (10 ** 15),
                 vector=vector,
                 payload={
@@ -291,9 +291,12 @@ def index_document(payload: IndexRequest):
                     "source_type": payload.source_type,
                     "org_id": payload.org_id,
                     "content": chunk,
-                    "source_url": f"file:///{payload.file_path.replace(os.sep, '/')}"
+                    "source_url": f"file:///{payload.file_path.replace(os.sep, '/')}" if payload.file_path else ""
                 }
-            ))
+            )
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            points = list(executor.map(process_chunk, enumerate(chunks)))
             
         if points:
             with qdrant_write_lock:
