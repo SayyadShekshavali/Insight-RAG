@@ -1,3 +1,4 @@
+import { Router } from 'express';
 import { 
   getIntegrations, renderConnectOAuth, oauthCallback, 
   syncIntegration, disconnectIntegration, getGDriveFiles, getNotionFiles, connectNotionToken, connectGitHubToken
