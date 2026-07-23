@@ -622,15 +622,10 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {match.payload['content']}\n\n"
             
         system_instruction = (
-            "You are a helpful staff software engineer assistant. Answer the question using ONLY the provided context. "
-            "Cite files inside the answer using brackets like [1], [2], etc., matching the file index of the context. "
-            "Adjust the detail level of your response based on the user's question: if the user asks a simple, short query, "
-            "provide a concise, brief, and direct answer; if the user asks to explain in detail, analyze deeply, or write code, "
-            "provide a thorough, structured, and deep explanation. "
-            "If you cannot locate relevant information in the provided context to answer the question, or if you do not understand the query, "
-            "say: 'I could not locate relevant information in the connected workspace resources to answer your question. "
-            "Could you please elaborate more on your question or specify what detail you need so I can search better?' "
-            "Do not use exclamation points."
+            "You are an AI assistant. Answer the user's question ONLY using clear, fluent English sentences and paragraphs. "
+            "Do NOT paste raw code snippets, React components, JSON objects, import statements, or raw file blocks unless the user explicitly asks for code. "
+            "Explain concepts, documents, and files in conversational, sentence-based narrative format. "
+            "Cite source documents using brackets like [1]."
         )
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
@@ -688,10 +683,8 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             if matching_docs:
                 lines = [f"Here is the workspace document information for your query **\"{question}\"**:\n"]
                 for idx, md in enumerate(matching_docs[:5], 1):
-                    lines.append(f"**{idx}. {md.get('title')}** (`{md.get('source_type', 'file').upper()}`)")
-                    lines.append(f"Status: `{md.get('indexing_status', 'indexed').upper()}`")
-                    lines.append(f"Source: {md.get('source_type', 'file').capitalize()} Integration\n")
-                msg = "\n".join(lines)
+                    lines.append(f"The document **{md.get('title')}** (`{md.get('source_type', 'file').upper()}`) is active in your workspace with status `{md.get('indexing_status', 'indexed').upper()}`.")
+                msg = "\n\n".join(lines)
             else:
                 msg = (
                     "I could not locate relevant information in the connected workspace documents to answer your question. "
@@ -702,20 +695,25 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Here is a summary for **\"{question}\"** based on your connected workspace resources:\n"]
-            files_summary = {}
-            for match in top_matches:
-                t = match.payload.get("title", "Document")
-                c = match.payload.get("content", "").strip()
-                if t not in files_summary:
-                    snippet = re.sub(r'[\{\}\[\]\(\)<>;="]+', ' ', c[:250]).strip()
-                    files_summary[t] = snippet if snippet else "Document containing workspace specifications and logic."
+            synthesis_lines = [f"Based on your workspace resources, here is an explanation for **\"{question}\"**:\n"]
+            matching_title_docs = [d for d in (documents or []) if any(k in d.get("title", "").lower() for k in q_keywords if len(k) > 2)]
+            if matching_title_docs:
+                for doc in matching_title_docs[:3]:
+                    t = doc.get("title")
+                    st = doc.get("source_type", "file").upper()
+                    synthesis_lines.append(f"The document **{t}** is an active workspace resource (`{st}`) connected to your application. It provides professional documentation, background experience, and specifications related to {t.split('.')[0]}.")
+            else:
+                files_seen = set()
+                for match in top_matches:
+                    t = match.payload.get("title", "Document")
+                    c = match.payload.get("content", "").strip()
+                    if t not in files_seen:
+                        files_seen.add(t)
+                        clean_text = " ".join([line.strip() for line in c.split('\n') if not any(w in line for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', 'return ', '<div', '</', '==', '=>', '{', '}', '$schema'])])
+                        if clean_text:
+                            synthesis_lines.append(f"According to **{t}**, {clean_text[:220]}...")
 
-            for idx, (title, snippet) in enumerate(files_summary.items(), 1):
-                synthesis_lines.append(f"**[{idx}] {title}**")
-                synthesis_lines.append(f"> {snippet[:200]}...\n")
-            
-            msg = "\n".join(synthesis_lines)
+            msg = "\n\n".join(synthesis_lines)
             for word in msg.split(" "):
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
