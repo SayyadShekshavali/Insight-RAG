@@ -673,22 +673,37 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
-        if not top_matches:
-            # Check if any MongoDB document title matches keywords in the question
-            matching_docs = []
+        # Check if the query asked for a specific file keyword (like "amex")
+        target_file_keywords = [k for k in q_keywords if len(k) > 2 and k not in ["file", "files", "document", "documents", "pdf", "repo", "code"]]
+        matched_docs = []
+        if target_file_keywords:
             seen_titles = set()
-            if documents and isinstance(documents, list):
-                for d in documents:
-                    title_clean = d.get("title", "").lower()
-                    t_orig = d.get("title")
-                    if t_orig not in seen_titles and (any(k in title_clean for k in q_keywords if len(k) > 2) or any(k in title_clean for k in search_query.lower().split(" ") if len(k) > 2 and k not in STOP_WORDS)):
-                        seen_titles.add(t_orig)
-                        matching_docs.append(d)
+            for d in (documents or []):
+                t = d.get("title", "")
+                if t and t not in seen_titles and any(k in t.lower() for k in target_file_keywords):
+                    seen_titles.add(t)
+                    matched_docs.append(d)
 
-            if matching_docs:
-                lines = [f"Here is the workspace document information for your query **\"{question}\"**:\n"]
-                for md in matching_docs[:3]:
-                    lines.append(f"The document **{md.get('title')}** (`{md.get('source_type', 'file').upper()}`) is active in your workspace with status `{md.get('indexing_status', 'indexed').upper()}`.")
+        if target_file_keywords and not matched_docs:
+            req_name = target_file_keywords[0].upper()
+            lines = [f"The document matching **\"{req_name}\"** is not currently uploaded in your connected workspace documents.\n"]
+            if documents:
+                lines.append("Here are the active workspace documents currently available in your system:")
+                seen = set()
+                for d in documents:
+                    t = d.get("title")
+                    if t and t not in seen:
+                        seen.add(t)
+                        lines.append(f"- **{t}** (`{d.get('source_type', 'file').upper()}`)")
+            msg = "\n\n".join(lines)
+            for word in msg.split(" "):
+                yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
+                await asyncio.sleep(0.01)
+        elif not top_matches:
+            if matched_docs:
+                lines = [f"Here is the workspace document information for **\"{question}\"**:\n"]
+                for md in matched_docs[:3]:
+                    lines.append(f"The document **{md.get('title')}** (`{md.get('source_type', 'file').upper()}`) is an active workspace document.")
                 msg = "\n\n".join(lines)
             else:
                 msg = (
@@ -700,9 +715,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Based on your workspace documents, here is a summary for **\"{question}\"**:\n"]
-            
-            # Deduplicate top_matches by title and summarize actual content
+            synthesis_lines = [f"Based on your workspace documents, here is an explanation for **\"{question}\"**:\n"]
             doc_summaries = {}
             for match in top_matches:
                 t = match.payload.get("title", "Document")
@@ -717,21 +730,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
                     synthesis_lines.append(f"**[{idx}] {title}**\n{text_summary}...\n")
             else:
-                seen_titles = set()
-                matching_title_docs = []
-                for d in (documents or []):
-                    t = d.get("title")
-                    if t and t not in seen_titles and any(k in t.lower() for k in q_keywords if len(k) > 2):
-                        seen_titles.add(t)
-                        matching_title_docs.append(d)
-                
-                if matching_title_docs:
-                    doc = matching_title_docs[0]
-                    t = doc.get("title")
-                    st = doc.get("source_type", "file").upper()
-                    synthesis_lines.append(f"The document **{t}** is an active `{st}` workspace resource connected to your application. It contains technical specifications and background details for {t.split('.')[0]}.")
-                else:
-                    synthesis_lines.append("I could not locate relevant text content in the workspace documents for your query.")
+                synthesis_lines.append("I could not locate relevant text content in the workspace documents for your query.")
 
             msg = "\n\n".join(synthesis_lines)
             for word in msg.split(" "):
