@@ -265,18 +265,23 @@ def start_auto_sync_thread():
 @app.post("/index")
 def index_document(payload: IndexRequest):
     try:
-        if payload.content and isinstance(payload.content, str) and payload.content.strip():
-            text = payload.content
-        elif payload.file_path and isinstance(payload.file_path, str) and os.path.exists(payload.file_path):
+        if payload.file_path and isinstance(payload.file_path, str) and os.path.exists(payload.file_path):
             text = extract_text_from_file(payload.file_path, payload.source_type)
+        elif payload.content and isinstance(payload.content, str) and payload.content.strip():
+            text = payload.content
         else:
             text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace file and specifications for {payload.title}."
     except Exception:
         text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace file and specifications for {payload.title}."
 
+    # Filter out raw binary stream noise if present
+    if "%PDF-" in text or "/FlateDecode" in text or "endobj" in text:
+        clean_lines = [line.strip() for line in text.split('\n') if not any(b in line for b in ['%PDF-', '/FlateDecode', 'endobj', 'stream', '/Type', '/Font', '/MediaBox', '/Parent', '/Kids'])]
+        text = " ".join(clean_lines).strip()
+
     text = re.sub(r'[^\x00-\x7F]+', ' ', text).strip()
-    if not text:
-        text = f"Document: {payload.title}\nSource: {payload.source_type}\nContent: Workplace document specification."
+    if not text or len(text) < 10:
+        text = f"Document Title: {payload.title}\nSource Type: {payload.source_type}\nContent: Workplace document specification and file metadata for {payload.title}."
             
     try:
         chunks = get_text_chunks(text, chunk_size=1500, overlap=200)[:20]
