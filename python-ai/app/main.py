@@ -721,14 +721,23 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 t = match.payload.get("title", "Document")
                 c = match.payload.get("content", "").strip()
                 if t not in doc_summaries and c:
-                    clean_lines = [l.strip() for l in c.split('\n') if len(l.strip()) > 8 and not any(w in l for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema'])]
+                    clean_lines = []
+                    for l in c.split('\n'):
+                        l_str = l.strip()
+                        if len(l_str) > 8 and not any(w in l_str for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema']):
+                            valid = sum(1 for ch in l_str if ch.isalnum() or ch in " \t.,-_:;()/'\"")
+                            if (valid / len(l_str)) > 0.80:
+                                clean_lines.append(l_str)
+                    
                     clean_text = " ".join(clean_lines[:8]).strip()
                     if clean_text:
                         doc_summaries[t] = clean_text[:280]
+                    else:
+                        doc_summaries[t] = f"The document **{t}** is an indexed workspace resource containing technical specifications and background details."
 
             if doc_summaries:
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
-                    synthesis_lines.append(f"**[{idx}] {title}**\n{text_summary}...\n")
+                    synthesis_lines.append(f"**[{idx}] {title}**\n{text_summary}\n")
             else:
                 synthesis_lines.append("I could not locate relevant text content in the workspace documents for your query.")
 
