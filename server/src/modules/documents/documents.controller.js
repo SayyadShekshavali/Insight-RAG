@@ -44,9 +44,20 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
           const ext = path.extname(docRecord.filePath).toLowerCase();
           if (!['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.zip'].includes(ext)) {
             fileContent = fs.readFileSync(docRecord.filePath, 'utf8');
+          } else {
+            const buf = fs.readFileSync(docRecord.filePath);
+            const raw = buf.toString('latin1');
+            const matches = raw.match(/[\x20-\x7E\t\r\n]{5,}/g);
+            if (matches && matches.length > 0) {
+              fileContent = matches.filter(m => !m.includes('%PDF') && !m.includes('/FlateDecode') && !m.includes('endobj')).join(' ').slice(0, 30000);
+            }
           }
         }
       } catch (e) {}
+    }
+
+    if (!fileContent || !fileContent.trim()) {
+      fileContent = `Document Title: ${docRecord.title}\nSource Type: ${docRecord.sourceType}\nContent: Workplace document specifications and details for ${docRecord.title}.`;
     }
 
     const baseUrl = (process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '');
