@@ -1155,13 +1155,23 @@ const runRealNotionSync = async (orgId, token) => {
 
     for (const page of pages) {
       const pageId = page.id;
-      let title = `Notion Page - ${pageId}`;
-      if (page.properties) {
-        const titleProp = page.properties.title || page.properties.Name || page.properties.name;
-        if (titleProp && titleProp.title && Array.isArray(titleProp.title) && titleProp.title.length > 0) {
-          title = titleProp.title.map(t => t.plain_text).join('');
+      let title = '';
+      if (page.object === 'database' && page.title && Array.isArray(page.title) && page.title.length > 0) {
+        title = page.title.map(t => t.plain_text).join('');
+      } else if (page.child_page && page.child_page.title) {
+        title = page.child_page.title;
+      } else if (page.child_database && page.child_database.title) {
+        title = page.child_database.title;
+      } else if (page.properties) {
+        for (const key of Object.keys(page.properties)) {
+          const prop = page.properties[key];
+          if (prop && prop.type === 'title' && prop.title && Array.isArray(prop.title) && prop.title.length > 0) {
+            title = prop.title.map(t => t.plain_text).join('');
+            break;
+          }
         }
       }
+      if (!title) title = `Notion ${page.object === 'database' ? 'Database' : 'Page'} (${pageId.slice(0, 8)})`;
 
       logger.info(`Fetching blocks for Notion page: ${title} (${pageId})`);
       const blocksRes = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`, {
@@ -1668,15 +1678,26 @@ export const getNotionFiles = async (req, res) => {
       const token = integration.credentials.accessToken;
       if (!token.startsWith('mock-') && token !== 'notion_mock_token') {
         try {
-          const resData = await notionFetch('/search', token, 'POST', { page_size: 50 });
+          const resData = await notionFetch('/search', token, 'POST', { page_size: 100 });
           const pages = (resData.results || []).map(p => {
-            let title = 'Untitled Page';
-            if (p.properties) {
-              const titleProp = p.properties.title || p.properties.Name || p.properties.name;
-              if (titleProp && titleProp.title && Array.isArray(titleProp.title) && titleProp.title.length > 0) {
-                title = titleProp.title.map(t => t.plain_text).join('');
+            let title = '';
+            if (p.object === 'database' && p.title && Array.isArray(p.title) && p.title.length > 0) {
+              title = p.title.map(t => t.plain_text).join('');
+            } else if (p.child_page && p.child_page.title) {
+              title = p.child_page.title;
+            } else if (p.child_database && p.child_database.title) {
+              title = p.child_database.title;
+            } else if (p.properties) {
+              for (const key of Object.keys(p.properties)) {
+                const prop = p.properties[key];
+                if (prop && prop.type === 'title' && prop.title && Array.isArray(prop.title) && prop.title.length > 0) {
+                  title = prop.title.map(t => t.plain_text).join('');
+                  break;
+                }
               }
             }
+            if (!title) title = `Notion ${p.object === 'database' ? 'Database' : 'Page'} (${p.id.slice(0, 8)})`;
+
             return {
               id: p.id,
               name: title,
@@ -1685,7 +1706,7 @@ export const getNotionFiles = async (req, res) => {
               lastModified: p.last_edited_time ? new Date(p.last_edited_time).toLocaleDateString() : 'Recently'
             };
           });
-          if (pages.length > 0) return res.json(pages);
+          return res.json(pages);
         } catch (err) {
           logger.error(`Failed to fetch real Notion pages: ${err.message}`);
         }
