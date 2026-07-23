@@ -43,15 +43,19 @@ import time
 
 QDRANT_HOST = os.getenv("QDRANT_HOST")
 QDRANT_PORT = os.getenv("QDRANT_PORT", "6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_PATH = os.getenv("QDRANT_STORAGE_PATH")
 COLLECTION_NAME = "insight_rag"
 
 if QDRANT_HOST:
-    print(f"Connecting to Qdrant service at {QDRANT_HOST}:{QDRANT_PORT}...")
+    print(f"Connecting to Qdrant service at {QDRANT_HOST}...")
     qdrant_client = None
     for attempt in range(10):
         try:
-            qdrant_client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT))
+            if QDRANT_HOST.startswith("http"):
+                qdrant_client = QdrantClient(url=QDRANT_HOST, api_key=QDRANT_API_KEY)
+            else:
+                qdrant_client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT), api_key=QDRANT_API_KEY)
             # Try to query collections to check health
             qdrant_client.get_collections()
             break
