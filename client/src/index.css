@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 1. Organic Classic (Default Dark Teal) */
+:root, [data-theme="cyber-cyan"], [data-theme="classic-dark"] {
+  --bg-page: #14161A;
+  --bg-sidebar: #101215;
+  --bg-card: #1B1E23;
+  --brand-teal: #1D9E75;
+  --brand-light: #9FE1CB;
+  --brand-dark: #04342C;
+  --text-primary: #F1EFE8;
+  --text-secondary: #B4B2A9;
+  --text-tertiary: #5F5E5A;
+  --border-hairline: #2A2D33;
+  --accent-glow: rgba(29, 158, 117, 0.25);
+}
+
+/* 2. Nordic Light (Clean Porcelain Sky Blue) */
+[data-theme="nordic-light"] {
+  --bg-page: #f0f4f8;
+  --bg-sidebar: #e2e8f0;
+  --bg-card: #ffffff;
+  --brand-teal: #0284c7;
+  --brand-light: #38bdf8;
+  --brand-dark: #e0f2fe;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #64748b;
+  --border-hairline: #cbd5e1;
+  --accent-glow: rgba(2, 132, 199, 0.2);
+}
+
+/* 3. Modern Dark (Pitch Black OLED Void + Electric Cyan Glow) */
+[data-theme="modern-dark"] {
+  --bg-page: #050505;
+  --bg-sidebar: #020202;
+  --bg-card: #0d0d0d;
+  --brand-teal: #00f2fe;
+  --brand-light: #38bdf8;
+  --brand-dark: #032b38;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --border-hairline: #1f1f23;
+  --accent-glow: rgba(0, 242, 254, 0.25);
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-page) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* Force global theme class overrides for 100% coverage across all elements */
+.bg-background-page { background-color: var(--bg-page) !important; }
+.bg-background-sidebar { background-color: var(--bg-sidebar) !important; }
+.bg-background-card { background-color: var(--bg-card) !important; }
+.bg-brand-teal { background-color: var(--brand-teal) !important; }
+
+.text-text-primary { color: var(--text-primary) !important; }
+.text-text-secondary { color: var(--text-secondary) !important; }
+.text-text-tertiary { color: var(--text-tertiary) !important; }
+.text-brand-teal { color: var(--brand-teal) !important; }
+
+.border-border-hairline { border-color: var(--border-hairline) !important; }
+.border-brand-teal { border-color: var(--brand-teal) !important; }
+
+/* Custom scrollbar matching theme design */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-sidebar);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-teal);
+}
+
+/* React Flow customizations for Dark Theme */
+.react-flow__renderer {
+  background-color: var(--bg-page) !important;
+}
+.react-flow__node {
+  border-radius: 8px !important;
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-hairline) !important;
+  color: var(--text-primary) !important;
+}
+.react-flow__handle {
+  background: var(--brand-teal) !important;
+}

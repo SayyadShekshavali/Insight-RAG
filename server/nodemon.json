@@ -1,0 +1,10 @@
+{
+  "watch": ["src"],
+  "ignore": [
+    "uploads/*",
+    "uploads/temp/*",
+    "node_modules/*",
+    ".seed-credentials.txt"
+  ],
+  "ext": "js,mjs,json"
+}

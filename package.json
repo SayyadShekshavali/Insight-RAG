@@ -1,0 +1,16 @@
+{
+  "name": "insight-rag-root",
+  "version": "1.0.0",
+  "description": "Enterprise AI Workspace for engineering teams",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev:python": "cd python-ai && .venv\\Scripts\\uvicorn app.main:app --reload --port 8000",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\" \"npm run dev:python\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
