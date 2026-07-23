@@ -702,11 +702,18 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Based on your connected workspace documents, here is the relevant information for **\"{question}\"**:\n"]
-            for idx, match in enumerate(top_matches):
-                title = match.payload.get("title", f"Document {idx+1}")
-                content = match.payload.get("content", "").strip()
-                synthesis_lines.append(f"### [{idx + 1}] {title}\n{content}\n")
+            synthesis_lines = [f"Here is a summary for **\"{question}\"** based on your connected workspace resources:\n"]
+            files_summary = {}
+            for match in top_matches:
+                t = match.payload.get("title", "Document")
+                c = match.payload.get("content", "").strip()
+                if t not in files_summary:
+                    snippet = re.sub(r'[\{\}\[\]\(\)<>;="]+', ' ', c[:250]).strip()
+                    files_summary[t] = snippet if snippet else "Document containing workspace specifications and logic."
+
+            for idx, (title, snippet) in enumerate(files_summary.items(), 1):
+                synthesis_lines.append(f"**[{idx}] {title}**")
+                synthesis_lines.append(f"> {snippet[:200]}...\n")
             
             msg = "\n".join(synthesis_lines)
             for word in msg.split(" "):
