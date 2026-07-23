@@ -554,6 +554,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             
             if q_keywords:
                 for k in q_keywords:
+                    if len(k) < 3: continue
                     k_no_ext = k.split('.')[0]
                     path_segments = [seg.lower() for seg in p_title_clean.split('/')]
                     filename = path_segments[-1] if path_segments else ""
@@ -561,15 +562,15 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
 
                     # Direct title match, extension match, or segment match
                     if k == p_title_clean or k_no_ext == p_title_no_ext or k_no_ext in p_title_no_ext or p_title_no_ext in k_no_ext or k == filename_no_ext or k in path_segments:
-                        combined_score += 50.0
+                        combined_score += 500.0
                     elif k in p_title_clean:
-                        combined_score += 20.0
+                        combined_score += 200.0
             
-            # Boost GitHub documents if the query is code-related
+            # Boost GitHub documents ONLY if the query explicitly mentions code/git keywords (NEVER generic 'file')
             source_type = point.payload.get("source_type", "") if point.payload else ""
             if source_type == 'github':
                 query_lower = question.lower()
-                if any(k in query_lower for k in ["repo", "github", "code", "git", "file", "java", "script", "jsx", "tsx", "auth", "middleware", "route", "taskpilot"]):
+                if any(k in query_lower for k in ["github", "git repo", "source code", "repository", "taskpilot"]):
                     combined_score += 5.0
             
             reranked_points.append((combined_score, point))
