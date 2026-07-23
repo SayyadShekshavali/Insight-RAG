@@ -57,6 +57,31 @@ function AdminIntegrations() {
   const [syncingNotion, setSyncingNotion] = useState(false);
   const [notionSearch, setNotionSearch] = useState('');
 
+  // GitHub Connector State
+  const [showGitHubModal, setShowGitHubModal] = useState(false);
+  const [githubTokenInput, setGithubTokenInput] = useState('');
+  const [connectingGitHub, setConnectingGitHub] = useState(false);
+
+  const handleSaveGitHubToken = async () => {
+    if (!githubTokenInput.trim()) return;
+    setConnectingGitHub(true);
+    try {
+      const res = await api.post('/integrations/github/connect-key', { token: githubTokenInput.trim() });
+      if (res.ok) {
+        setShowGitHubModal(false);
+        setGithubTokenInput('');
+        fetchIntegrations();
+        alert("GitHub Personal Access Token connected! Repository crawler started.");
+      } else {
+        alert("Failed to connect GitHub token. Please verify your token.");
+      }
+    } catch (err) {
+      alert("Error connecting GitHub token.");
+    } finally {
+      setConnectingGitHub(false);
+    }
+  };
+
   const [customNotionInput, setCustomNotionInput] = useState('');
 
   const handleAddCustomNotionPage = async () => {
@@ -239,6 +264,10 @@ function AdminIntegrations() {
   const [connectingSource, setConnectingSource] = useState(false);
 
   const handleConnect = (source) => {
+    if (source === 'github') {
+      setShowGitHubModal(true);
+      return;
+    }
     const token = localStorage.getItem('accessToken') || '';
     const connectUrl = `${API_BASE}/integrations/connect/${source}?token=${encodeURIComponent(token)}`;
     const popup = window.open(connectUrl, `Connect ${source}`, 'width=600,height=750');
@@ -756,6 +785,92 @@ function AdminIntegrations() {
                   </div>
                 </>
               )}
+            </motion.div>
+          </div>
+      {/* GitHub Connector Modal */}
+      <AnimatePresence>
+        {showGitHubModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md rounded-card border border-border-hairline bg-background-card p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-border-hairline/45 pb-3">
+                <div className="flex items-center gap-2">
+                  <Github className="h-5 w-5 text-brand-teal" />
+                  <h3 className="text-sm font-semibold text-text-primary">Connect GitHub Repositories</h3>
+                </div>
+                <button
+                  onClick={() => setShowGitHubModal(false)}
+                  className="text-text-tertiary hover:text-text-primary transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-primary block">
+                    Option 1: GitHub Personal Access Token (Recommended)
+                  </label>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">
+                    Generate a classic token at <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="text-brand-teal underline">github.com/settings/tokens</a> with the <code className="bg-background-sidebar px-1 py-0.5 rounded text-[10px]">repo</code> scope selected.
+                  </p>
+                  <input
+                    type="password"
+                    value={githubTokenInput}
+                    onChange={(e) => setGithubTokenInput(e.target.value)}
+                    placeholder="Paste GitHub Personal Access Token (ghp_...)"
+                    className="w-full rounded border border-border-hairline bg-background-page px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary focus:border-brand-teal focus:outline-none font-mono"
+                  />
+                  <button
+                    onClick={handleSaveGitHubToken}
+                    disabled={connectingGitHub || !githubTokenInput.trim()}
+                    className="w-full rounded bg-brand-teal px-4 py-2 text-xs font-semibold text-background-page hover:bg-brand-teal-light disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {connectingGitHub ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Connecting & Crawling Repositories...
+                      </>
+                    ) : (
+                      'Connect & Sync All Repositories'
+                    )}
+                  </button>
+                </div>
+
+                <div className="relative flex items-center my-3">
+                  <div className="flex-grow border-t border-border-hairline/45"></div>
+                  <span className="flex-shrink mx-3 text-[10px] text-text-tertiary uppercase">Or</span>
+                  <div className="flex-grow border-t border-border-hairline/45"></div>
+                </div>
+
+                <div>
+                  <button
+                    onClick={() => {
+                      setShowGitHubModal(false);
+                      const token = localStorage.getItem('accessToken') || '';
+                      const connectUrl = `${API_BASE}/integrations/connect/github?token=${encodeURIComponent(token)}`;
+                      window.open(connectUrl, 'Connect github', 'width=600,height=750');
+                    }}
+                    className="w-full rounded border border-border-hairline bg-background-sidebar px-4 py-2 text-xs font-medium text-text-primary hover:bg-background-card transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Github className="h-4 w-4 text-brand-teal" />
+                    Connect via GitHub OAuth App
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border-hairline/45 flex justify-end">
+                <button
+                  onClick={() => setShowGitHubModal(false)}
+                  className="rounded-control border border-border-hairline px-4 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
