@@ -844,7 +844,6 @@ const runRealGitHubSync = async (orgId, token) => {
         const ext = path.extname(entry.path).toLowerCase();
         if (!allowedExtensions.includes(ext)) return false;
         
-        // Exclude dependencies, build artifacts, lockfiles, and IDE metadata directories
         const pathLower = entry.path.toLowerCase();
         const excludeFolders = [
           'node_modules/', '.git/', 'dist/', 'build/', 'target/', 'out/', 
@@ -854,17 +853,35 @@ const runRealGitHubSync = async (orgId, token) => {
         if (excludeFolders.some(folder => pathLower.includes(folder) || pathLower === folder)) return false;
         
         return true;
-      }); // Extract all files in the repository
+      }).slice(0, 35); // Crawl top 35 source files per repository
+
+      logger.info(`Syncing ${textFiles.length} source files for repository: ${owner}/${repoName}`);
 
       const concurrencyLimit = 5;
       for (let i = 0; i < textFiles.length; i += concurrencyLimit) {
         const batch = textFiles.slice(i, i + concurrencyLimit);
         await Promise.all(batch.map(async (entry) => {
-          logger.info(`Fetching file: ${entry.path} in ${repoName}`);
           try {
-            const blobData = await githubFetch(`/repos/${owner}/${repoName}/git/blobs/${entry.sha}`, token);
-            if (blobData.content) {
-              const rawContent = Buffer.from(blobData.content, 'base64').toString('utf8');
+            let rawContent = '';
+            // Try raw.githubusercontent.com first for speed
+            try {
+              const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repoName}/${defaultBranch}/${entry.path}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (rawRes.ok) {
+                rawContent = await rawRes.text();
+              }
+            } catch (rawErr) {}
+
+            // Fallback to blob fetch if raw fetch fails
+            if (!rawContent) {
+              const blobData = await githubFetch(`/repos/${owner}/${repoName}/git/blobs/${entry.sha}`, token);
+              if (blobData.content) {
+                rawContent = Buffer.from(blobData.content, 'base64').toString('utf8');
+              }
+            }
+
+            if (rawContent && rawContent.trim()) {
               const randSuffix = Math.random().toString(36).slice(-5);
               const cleanFilename = `github-${repoName}-${randSuffix}-${path.basename(entry.path)}`.replace(/[^a-zA-Z0-9.-]/g, '_');
               const filePath = path.join(uDir, `${Date.now()}-${cleanFilename}`);
@@ -1095,11 +1112,7 @@ const runRealNotionSync = async (orgId, token) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        filter: {
-          property: 'object',
-          value: 'page'
-        },
-        page_size: 10
+        page_size: 50
       })
     });
 
@@ -1110,10 +1123,31 @@ const runRealNotionSync = async (orgId, token) => {
 
     const data = await response.json();
     const pages = data.results || [];
-    logger.info(`Found ${pages.length} Notion pages to sync`);
+    logger.info(`Found ${pages.length} Notion pages/databases to sync`);
 
     const uDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uDir)) fs.mkdirSync(uDir, { recursive: true });
+
+    if (pages.length === 0) {
+      logger.info('No Notion pages shared with integration token yet.');
+      const guideContent = `Notion Workspace Sync Guide\n\nHow to share your Notion pages with Insight RAG:\n1. Open your workspace page or database in Notion.\n2. Click the '...' menu at the top right corner.\n3. Click 'Add connections' (or 'Connect to').\n4. Select your Insight RAG integration name.\n5. Return to Insight RAG and click Sync Now!`;
+      const filePath = path.join(uDir, `${Date.now()}-notion-permission-guide.txt`);
+      fs.writeFileSync(filePath, guideContent, 'utf8');
+
+      let guideDoc = await Document.findOne({ orgId, title: 'Notion: Workspace Setup & Permission Instructions' });
+      if (!guideDoc) {
+        guideDoc = new Document({
+          title: 'Notion: Workspace Setup & Permission Instructions',
+          sourceType: 'notion',
+          orgId,
+          filePath,
+          fileSize: Buffer.byteLength(guideContent),
+          indexingStatus: 'processing'
+        });
+        await guideDoc.save();
+        await triggerPythonIndexing(guideDoc);
+      }
+    }
 
     for (const page of pages) {
       const pageId = page.id;
