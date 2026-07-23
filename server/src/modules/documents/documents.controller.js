@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 import http from 'http';
+import https from 'https';
 import Document from './document.model.js';
 
 const logger = pino({
@@ -42,7 +43,7 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
 
   const options = {
     hostname: pythonUrl.hostname,
-    port: pythonUrl.port,
+    port: pythonUrl.port || (pythonUrl.protocol === 'https:' ? 443 : 80),
     path: '/index',
     method: 'POST',
     headers: {
@@ -51,7 +52,8 @@ const triggerPythonIndexing = async (docRecord, originalFilename) => {
     },
   };
 
-  const pyReq = http.request(options, (pyRes) => {
+  const client = pythonUrl.protocol === 'https:' ? https : http;
+  const pyReq = client.request(options, (pyRes) => {
     let responseBody = '';
     pyRes.on('data', (chunk) => {
       responseBody += chunk;

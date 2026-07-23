@@ -667,7 +667,7 @@ const triggerPythonIndexing = (docRecord) => {
 
     const options = {
       hostname: pythonUrl.hostname,
-      port: pythonUrl.port,
+      port: pythonUrl.port || (pythonUrl.protocol === 'https:' ? 443 : 80),
       path: '/index',
       method: 'POST',
       headers: {
@@ -676,7 +676,8 @@ const triggerPythonIndexing = (docRecord) => {
       },
     };
 
-    const pyReq = http.request(options, (pyRes) => {
+    const client = pythonUrl.protocol === 'https:' ? https : http;
+    const pyReq = client.request(options, (pyRes) => {
       let body = '';
       pyRes.on('data', (chunk) => body += chunk);
       pyRes.on('end', async () => {

@@ -1,4 +1,5 @@
 import http from 'http';
+import https from 'https';
 import mongoose from 'mongoose';
 import pino from 'pino';
 import ChatThread from './chatThread.model.js';
@@ -266,7 +267,7 @@ export const askAI = async (req, res) => {
 
   const options = {
     hostname: pythonUrl.hostname,
-    port: pythonUrl.port,
+    port: pythonUrl.port || (pythonUrl.protocol === 'https:' ? 443 : 80),
     path: '/ask',
     method: 'POST',
     headers: {
@@ -284,7 +285,8 @@ export const askAI = async (req, res) => {
   let followUpQuestions = [];
   let pyBuffer = '';
 
-  const pyReq = http.request(options, (pyRes) => {
+  const client = pythonUrl.protocol === 'https:' ? https : http;
+  const pyReq = client.request(options, (pyRes) => {
     pyRes.setTimeout(120000);
     pyRes.on('data', async (chunk) => {
       const text = chunk.toString();
