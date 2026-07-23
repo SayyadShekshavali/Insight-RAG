@@ -4,7 +4,7 @@ import {
   FileSpreadsheet, FileArchive, File, CheckCircle2, Loader2, AlertCircle 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '../../lib/api.js';
+import { api, API_BASE } from '../../lib/api.js';
 
 // Select icon based on file extension
 const FileIcon = ({ type, className = "h-4 w-4" }) => {
@@ -62,7 +62,7 @@ function AdminDocuments() {
     const top = window.screen.height / 2 - height / 2;
 
     const popup = window.open(
-      `/api/integrations/connect/gdrive?token=${localStorage.getItem('accessToken')}`,
+      `${API_BASE}/integrations/connect/gdrive?token=${localStorage.getItem('accessToken')}`,
       'Connect Google Drive',
       `width=${width},height=${height},top=${top},left=${left}`
     );

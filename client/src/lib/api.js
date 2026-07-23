@@ -1,7 +1,7 @@
 import store from '../store/index.js';
 import { updateAccessToken, logoutUser } from '../store/authSlice.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL
+export const API_BASE = import.meta.env.VITE_API_BASE_URL
   ? (import.meta.env.VITE_API_BASE_URL.endsWith('/api')
       ? import.meta.env.VITE_API_BASE_URL
       : `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api`)

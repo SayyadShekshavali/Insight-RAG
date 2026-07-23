@@ -4,7 +4,7 @@ import {
   Github, Slack, Layers, FileCode, FolderOpen, BookOpen, 
   Settings, RefreshCw, Unlink, Plus, Check, Loader2, AlertTriangle, X 
 } from 'lucide-react';
-import { api } from '../../lib/api.js';
+import { api, API_BASE } from '../../lib/api.js';
 
 // Connector icon selector
 const IntegrationIcon = ({ type, className = "h-6 w-6" }) => {
@@ -228,7 +228,7 @@ function AdminIntegrations() {
 
   const handleConnect = (source) => {
     const token = localStorage.getItem('accessToken') || '';
-    const connectUrl = `http://localhost:5000/api/integrations/connect/${source}?token=${encodeURIComponent(token)}`;
+    const connectUrl = `${API_BASE}/integrations/connect/${source}?token=${encodeURIComponent(token)}`;
     const popup = window.open(connectUrl, `Connect ${source}`, 'width=600,height=750');
     
     const interval = setInterval(() => {

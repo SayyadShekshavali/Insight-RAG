@@ -31,37 +31,44 @@ export const renderConnectOAuth = async (req, res) => {
   const { source } = req.params;
   const { token } = req.query;
 
+  const hostUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get('host')}`;
+
   // 1. Real GitHub OAuth Redirect if Client ID is configured
   if (source === 'github' && process.env.GITHUB_CLIENT_ID) {
-    const redirectUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GITHUB_CALLBACK_URL)}&scope=repo,read:org&state=${encodeURIComponent(token)}&prompt=select_account`;
+    const callbackUrl = process.env.GITHUB_CALLBACK_URL || `${hostUrl}/api/integrations/callback/github`;
+    const redirectUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=repo,read:org&state=${encodeURIComponent(token)}&prompt=select_account`;
     logger.info(`Redirecting user to real GitHub OAuth authorize URL`);
     return res.redirect(redirectUrl);
   }
 
   // Real Google OAuth Redirect if Client ID is configured
   if (source === 'gdrive' && process.env.GOOGLE_CLIENT_ID) {
-    const redirectUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/drive.readonly')}&state=${encodeURIComponent(token)}&access_type=offline&prompt=select_account%20consent`;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || `${hostUrl}/api/integrations/callback/gdrive`;
+    const redirectUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/drive.readonly')}&state=${encodeURIComponent(token)}&access_type=offline&prompt=select_account%20consent`;
     logger.info(`Redirecting user to real Google OAuth authorize URL`);
     return res.redirect(redirectUrl);
   }
 
   // Real Atlassian (Jira / Confluence) OAuth Redirect if Client ID is configured
   if ((source === 'jira' || source === 'confluence') && process.env.ATLASSIAN_CLIENT_ID) {
-    const redirectUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${process.env.ATLASSIAN_CLIENT_ID}&scope=${encodeURIComponent('read:jira-work read:confluence-content.all offline_access')}&redirect_uri=${encodeURIComponent(process.env.ATLASSIAN_CALLBACK_URL)}&state=${encodeURIComponent(token)}&response_type=code&prompt=consent`;
+    const callbackUrl = process.env.ATLASSIAN_CALLBACK_URL || `${hostUrl}/api/integrations/callback/jira`;
+    const redirectUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${process.env.ATLASSIAN_CLIENT_ID}&scope=${encodeURIComponent('read:jira-work read:confluence-content.all offline_access')}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(token)}&response_type=code&prompt=consent`;
     logger.info(`Redirecting user to real Atlassian OAuth authorize URL`);
     return res.redirect(redirectUrl);
   }
 
   // Real Slack OAuth Redirect if Client ID is configured
   if (source === 'slack' && process.env.SLACK_CLIENT_ID) {
-    const redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${process.env.SLACK_CLIENT_ID}&scope=${encodeURIComponent('channels:read,channels:history,groups:read,groups:history')}&redirect_uri=${encodeURIComponent(process.env.SLACK_CALLBACK_URL)}&state=${encodeURIComponent(token)}`;
+    const callbackUrl = process.env.SLACK_CALLBACK_URL || `${hostUrl}/api/integrations/callback/slack`;
+    const redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${process.env.SLACK_CLIENT_ID}&scope=${encodeURIComponent('channels:read,channels:history,groups:read,groups:history')}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(token)}`;
     logger.info(`Redirecting user to real Slack OAuth authorize URL`);
     return res.redirect(redirectUrl);
   }
 
   // Real Notion OAuth Redirect if Client ID is configured
   if (source === 'notion' && process.env.NOTION_CLIENT_ID) {
-    const redirectUrl = `https://app.notion.com/install-integration?response_type=code&client_id=${process.env.NOTION_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.NOTION_CALLBACK_URL)}&owner=user&state=${encodeURIComponent(token || '')}`;
+    const callbackUrl = process.env.NOTION_CALLBACK_URL || `${hostUrl}/api/integrations/callback/notion`;
+    const redirectUrl = `https://app.notion.com/install-integration?response_type=code&client_id=${process.env.NOTION_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&owner=user&state=${encodeURIComponent(token || '')}`;
     logger.info(`Redirecting user to Notion install URL: ${redirectUrl}`);
     return res.redirect(redirectUrl);
   }
