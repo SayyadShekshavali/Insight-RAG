@@ -654,61 +654,41 @@ export const oauthCallback = async (req, res) => {
 };
 
 // Helper: Trigger Python indexing for document
-const triggerPythonIndexing = (docRecord) => {
-  return new Promise((resolve) => {
-    const pythonUrl = new URL(process.env.PYTHON_AI_URL || 'http://localhost:8000');
-    const postData = JSON.stringify({
-      document_id: docRecord._id.toString(),
-      file_path: docRecord.filePath,
-      title: docRecord.title,
-      source_type: docRecord.sourceType,
-      org_id: docRecord.orgId.toString(),
-    });
-
-    const options = {
-      hostname: pythonUrl.hostname,
-      port: pythonUrl.port || (pythonUrl.protocol === 'https:' ? 443 : 80),
-      path: '/index',
+const triggerPythonIndexing = async (docRecord) => {
+  try {
+    const baseUrl = (process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '');
+    const res = await fetch(`${baseUrl}/index`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-      },
-    };
-
-    const client = pythonUrl.protocol === 'https:' ? https : http;
-    const pyReq = client.request(options, (pyRes) => {
-      let body = '';
-      pyRes.on('data', (chunk) => body += chunk);
-      pyRes.on('end', async () => {
-        try {
-          if (pyRes.statusCode === 200) {
-            docRecord.indexingStatus = 'indexed';
-            docRecord.errorMessage = '';
-          } else {
-            let detail = 'Python parsing failed.';
-            try { detail = JSON.parse(body).detail || detail; } catch(e) {}
-            docRecord.indexingStatus = 'failed';
-            docRecord.errorMessage = detail;
-          }
-          await docRecord.save();
-        } catch (e) {}
-        resolve();
-      });
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        document_id: docRecord._id.toString(),
+        file_path: docRecord.filePath,
+        title: docRecord.title,
+        source_type: docRecord.sourceType,
+        org_id: docRecord.orgId.toString(),
+      })
     });
 
-    pyReq.on('error', async (err) => {
+    if (res.ok) {
+      docRecord.indexingStatus = 'indexed';
+      docRecord.errorMessage = '';
+    } else {
+      let detail = 'Python parsing failed.';
       try {
-        docRecord.indexingStatus = 'failed';
-        docRecord.errorMessage = 'AI index service is offline.';
-        await docRecord.save();
+        const err = await res.json();
+        detail = err.detail || detail;
       } catch (e) {}
-      resolve();
-    });
-
-    pyReq.write(postData);
-    pyReq.end();
-  });
+      docRecord.indexingStatus = 'failed';
+      docRecord.errorMessage = detail;
+    }
+    await docRecord.save();
+  } catch (err) {
+    try {
+      docRecord.indexingStatus = 'failed';
+      docRecord.errorMessage = 'AI index service is offline.';
+      await docRecord.save();
+    } catch (e) {}
+  }
 };
 
 const MOCK_CONNECTOR_FILES = {

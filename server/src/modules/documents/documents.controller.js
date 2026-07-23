@@ -32,61 +32,41 @@ export const getDocuments = async (req, res) => {
 
 // Background worker helper to index document in Python AI service
 const triggerPythonIndexing = async (docRecord, originalFilename) => {
-  const pythonUrl = new URL(process.env.PYTHON_AI_URL || 'http://localhost:8000');
-  const postData = JSON.stringify({
-    document_id: docRecord._id.toString(),
-    file_path: docRecord.filePath,
-    title: docRecord.title,
-    source_type: docRecord.sourceType,
-    org_id: docRecord.orgId.toString(),
-  });
-
-  const options = {
-    hostname: pythonUrl.hostname,
-    port: pythonUrl.port || (pythonUrl.protocol === 'https:' ? 443 : 80),
-    path: '/index',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData),
-    },
-  };
-
-  const client = pythonUrl.protocol === 'https:' ? https : http;
-  const pyReq = client.request(options, (pyRes) => {
-    let responseBody = '';
-    pyRes.on('data', (chunk) => {
-      responseBody += chunk;
+  try {
+    const baseUrl = (process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '');
+    const res = await fetch(`${baseUrl}/index`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        document_id: docRecord._id.toString(),
+        file_path: docRecord.filePath,
+        title: docRecord.title,
+        source_type: docRecord.sourceType,
+        org_id: docRecord.orgId.toString(),
+      })
     });
 
-    pyRes.on('end', async () => {
+    if (res.ok) {
+      docRecord.indexingStatus = 'indexed';
+      docRecord.errorMessage = '';
+      logger.info(`Successfully indexed document: ${docRecord.title}`);
+    } else {
+      let detail = 'Python parsing execution failed.';
       try {
-        if (pyRes.statusCode === 200) {
-          docRecord.indexingStatus = 'indexed';
-          docRecord.errorMessage = '';
-          logger.info(`Successfully indexed document: ${docRecord.title}`);
-        } else {
-          const err = JSON.parse(responseBody);
-          docRecord.indexingStatus = 'failed';
-          docRecord.errorMessage = err.detail || 'Python parsing execution failed.';
-          logger.error(`Failed to index document ${docRecord.title}: ${docRecord.errorMessage}`);
-        }
-        await docRecord.save();
-      } catch (err) {
-        logger.error(`Failed to parse index result: ${err.message}`);
-      }
-    });
-  });
-
-  pyReq.on('error', async (err) => {
+        const err = await res.json();
+        detail = err.detail || detail;
+      } catch (e) {}
+      docRecord.indexingStatus = 'failed';
+      docRecord.errorMessage = detail;
+      logger.error(`Failed to index document ${docRecord.title}: ${docRecord.errorMessage}`);
+    }
+    await docRecord.save();
+  } catch (err) {
     logger.error(`Failed to reach Python indexing service: ${err.message}`);
     docRecord.indexingStatus = 'failed';
     docRecord.errorMessage = 'AI index service is offline. File is saved but not embedded.';
     await docRecord.save();
-  });
-
-  pyReq.write(postData);
-  pyReq.end();
+  }
 };
 
 // Upload single document controller
