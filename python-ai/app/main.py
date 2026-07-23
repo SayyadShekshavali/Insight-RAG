@@ -97,10 +97,11 @@ class AskRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     document_id: str
-    file_path: str
+    file_path: str = ""
     title: str
     source_type: str
     org_id: str
+    content: str = None
 
 class DeleteRequest(BaseModel):
     document_id: str
@@ -265,7 +266,9 @@ def start_auto_sync_thread():
 @app.post("/index")
 def index_document(payload: IndexRequest):
     try:
-        if os.path.exists(payload.file_path):
+        if payload.content and payload.content.strip():
+            text = payload.content
+        elif payload.file_path and os.path.exists(payload.file_path):
             text = extract_text_from_file(payload.file_path, payload.source_type)
         else:
             text = f"Repository Document: {payload.title}\nSource: {payload.source_type}\nContent: Source code and architecture file for {payload.title}."

@@ -658,6 +658,16 @@ export const oauthCallback = async (req, res) => {
 // Helper: Trigger Python indexing for document
 const triggerPythonIndexing = async (docRecord) => {
   try {
+    let fileContent = '';
+    if (docRecord.filePath && fs.existsSync(docRecord.filePath)) {
+      try {
+        const stat = fs.statSync(docRecord.filePath);
+        if (stat.size < 5 * 1024 * 1024) {
+          fileContent = fs.readFileSync(docRecord.filePath, 'utf8');
+        }
+      } catch (e) {}
+    }
+
     const baseUrl = (process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '');
     const res = await fetch(`${baseUrl}/index`, {
       method: 'POST',
@@ -668,6 +678,7 @@ const triggerPythonIndexing = async (docRecord) => {
         title: docRecord.title,
         source_type: docRecord.sourceType,
         org_id: docRecord.orgId.toString(),
+        content: fileContent || undefined
       })
     });
 
