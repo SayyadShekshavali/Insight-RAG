@@ -1105,18 +1105,33 @@ const notionFetch = (urlPath, token, method = 'GET', bodyObj = null) => {
 };
 
 // Real Notion Sync Background Crawler
-const runRealNotionSync = async (orgId, token) => {
+const runRealNotionSync = async (orgId, token, fileIds = []) => {
   try {
     logger.info('Starting real Notion sync crawler...');
+    let activeToken = token;
+    let integration = await Integration.findOne({ orgId, sourceType: 'notion' });
+
+    if (!activeToken || activeToken === 'mock-oauth-token-notion') {
+      if (integration && integration.credentials && integration.credentials.accessToken && integration.credentials.accessToken !== 'mock-oauth-token-notion') {
+        activeToken = integration.credentials.accessToken;
+      } else if (process.env.NOTION_CLIENT_SECRET && process.env.NOTION_CLIENT_SECRET.startsWith('secret_')) {
+        activeToken = process.env.NOTION_CLIENT_SECRET;
+      }
+    }
+
+    if (!activeToken) {
+      throw new Error('No valid Notion token found for synchronization');
+    }
+
     const response = await fetch('https://api.notion.com/v1/search', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${activeToken}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        page_size: 50
+        page_size: 100
       })
     });
 
@@ -1126,32 +1141,18 @@ const runRealNotionSync = async (orgId, token) => {
     }
 
     const data = await response.json();
-    const pages = data.results || [];
+    let pages = data.results || [];
+
+    if (Array.isArray(fileIds) && fileIds.length > 0) {
+      pages = pages.filter(p => fileIds.includes(p.id));
+    }
+
     logger.info(`Found ${pages.length} Notion pages/databases to sync`);
 
     const uDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uDir)) fs.mkdirSync(uDir, { recursive: true });
 
-    if (pages.length === 0) {
-      logger.info('No Notion pages shared with integration token yet.');
-      const guideContent = `Notion Workspace Sync Guide\n\nHow to share your Notion pages with Insight RAG:\n1. Open your workspace page or database in Notion.\n2. Click the '...' menu at the top right corner.\n3. Click 'Add connections' (or 'Connect to').\n4. Select your Insight RAG integration name.\n5. Return to Insight RAG and click Sync Now!`;
-      const filePath = path.join(uDir, `${Date.now()}-notion-permission-guide.txt`);
-      fs.writeFileSync(filePath, guideContent, 'utf8');
-
-      let guideDoc = await Document.findOne({ orgId, title: 'Notion: Workspace Setup & Permission Instructions' });
-      if (!guideDoc) {
-        guideDoc = new Document({
-          title: 'Notion: Workspace Setup & Permission Instructions',
-          sourceType: 'notion',
-          orgId,
-          filePath,
-          fileSize: Buffer.byteLength(guideContent),
-          indexingStatus: 'processing'
-        });
-        await guideDoc.save();
-        await triggerPythonIndexing(guideDoc);
-      }
-    }
+    const syncedDocs = [];
 
     for (const page of pages) {
       const pageId = page.id;
@@ -1176,7 +1177,7 @@ const runRealNotionSync = async (orgId, token) => {
       logger.info(`Fetching blocks for Notion page: ${title} (${pageId})`);
       const blocksRes = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${activeToken}`,
           'Notion-Version': '2022-06-28'
         }
       });
@@ -1220,15 +1221,16 @@ const runRealNotionSync = async (orgId, token) => {
       }
       await doc.save();
       await triggerPythonIndexing(doc);
+      syncedDocs.push(doc);
     }
 
-    const integration = await Integration.findOne({ orgId, sourceType: 'notion' });
     if (integration) {
       integration.status = 'connected';
       integration.lastSyncTime = new Date();
       await integration.save();
     }
     logger.info('Notion real synchronization completed successfully!');
+    return syncedDocs;
   } catch (syncErr) {
     logger.error(`Failed executing Notion sync: ${syncErr.message}`);
     const integration = await Integration.findOne({ orgId, sourceType: 'notion' });
@@ -1236,6 +1238,7 @@ const runRealNotionSync = async (orgId, token) => {
       integration.status = 'error';
       await integration.save();
     }
+    return [];
   }
 };
 
@@ -1764,10 +1767,10 @@ export const syncIntegration = async (req, res) => {
       return res.json({ message: 'Synchronization triggered successfully', documents: realDocs });
     }
 
-    // If real Notion connection is established, execute the real Notion sync
-    if (source === 'notion' && integration.credentials && integration.credentials.accessToken && !integration.credentials.accessToken.startsWith('mock-')) {
-      runRealNotionSync(orgId, integration.credentials.accessToken);
-      return res.json({ message: 'Synchronization triggered successfully' });
+    // Execute Notion sync with selected fileIds
+    if (source === 'notion') {
+      const docs = await runRealNotionSync(orgId, integration ? integration.credentials?.accessToken : null, fileIds);
+      return res.json({ message: 'Synchronization triggered successfully', documents: docs });
     }
 
     // If real Slack connection is established, execute the real Slack sync
