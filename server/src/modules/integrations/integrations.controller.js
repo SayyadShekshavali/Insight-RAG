@@ -1688,15 +1688,7 @@ export const getNotionFiles = async (req, res) => {
       }
     }
 
-    const mockNotionFiles = [
-      { id: 'notion-file-1', name: 'TaskPilot Architecture & System Specs.notion', type: 'Workspace Page', size: '14.2 KB', lastModified: 'Today' },
-      { id: 'notion-file-2', name: 'Engineering Team Wiki & Onboarding.notion', type: 'Team Wiki', size: '8.6 KB', lastModified: 'Yesterday' },
-      { id: 'notion-file-3', name: 'Q3 Product Roadmap & Feature Backlog.notion', type: 'Database', size: '22.1 KB', lastModified: '3 days ago' },
-      { id: 'notion-file-4', name: 'Customer Feedback & Bug Triage.notion', type: 'Database', size: '18.4 KB', lastModified: 'This week' },
-      { id: 'notion-file-5', name: 'API Reference & Integration Contracts.notion', type: 'Documentation', size: '11.8 KB', lastModified: '5 days ago' },
-      { id: 'notion-file-6', name: 'Security Audit & Compliance Runbook.notion', type: 'Workspace Page', size: '16.5 KB', lastModified: '1 week ago' }
-    ];
-    return res.json(mockNotionFiles);
+    return res.json([]);
   } catch (error) {
     logger.error(`Error listing Notion pages: ${error.message}`);
     return res.status(500).json({ error: 'InternalServerError', message: 'Failed to list Notion pages.' });
