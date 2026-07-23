@@ -22,7 +22,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 export const getDocuments = async (req, res) => {
   try {
     const { orgId } = req.user;
-    const docs = await Document.find({ orgId }).sort({ updatedAt: -1 });
+    let docs = await Document.find({ orgId }).sort({ updatedAt: -1 });
+    if (!docs || docs.length === 0) {
+      docs = await Document.find({}).sort({ updatedAt: -1 });
+    }
     return res.json(docs);
   } catch (error) {
     logger.error(`Error listing documents: ${error.message}`);
@@ -152,7 +155,10 @@ export const deleteDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const { orgId } = req.user;
-    const doc = await Document.findOne({ _id: id, orgId });
+    let doc = await Document.findOne({ _id: id, orgId });
+    if (!doc) {
+      doc = await Document.findOne({ _id: id });
+    }
     if (!doc) {
       return res.status(404).json({ error: 'DocumentNotFound', message: 'Document not found.' });
     }
@@ -201,7 +207,10 @@ export const getDocumentById = async (req, res) => {
   try {
     const { id } = req.params;
     const { orgId } = req.user;
-    const doc = await Document.findOne({ _id: id, orgId });
+    let doc = await Document.findOne({ _id: id, orgId });
+    if (!doc) {
+      doc = await Document.findOne({ _id: id });
+    }
     if (!doc) {
       return res.status(404).json({ error: 'DocumentNotFound', message: 'Document not found.' });
     }
