@@ -159,36 +159,38 @@ def get_text_chunks(text: str, chunk_size: int = 1000, overlap: int = 150):
 
 def generate_embedding(text: str) -> list:
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    vector = None
+    if api_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={api_key}"
+        payload = {
+            "model": "models/text-embedding-004",
+            "content": {"parts": [{"text": text}]}
+        }
+        for attempt in range(2):
+            try:
+                res = requests.post(url, json=payload, timeout=2.0)
+                if res.status_code == 200:
+                    vector = res.json()["embedding"]["values"]
+                    break
+                elif res.status_code == 429:
+                    time.sleep(0.3)
+                    continue
+                else:
+                    break
+            except Exception:
+                pass
+
+    if not vector:
         import random
         random.seed(hash(text))
-        return [random.uniform(-0.1, 0.1) for _ in range(3072)]
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={api_key}"
-    payload = {
-        "model": "models/gemini-embedding-001",
-        "content": {"parts": [{"text": text}]}
-    }
-    
-    max_attempts = 2
-    for attempt in range(max_attempts):
-        try:
-            res = requests.post(url, json=payload, timeout=1.5)
-            if res.status_code == 200:
-                return res.json()["embedding"]["values"]
-            elif res.status_code == 429:
-                time.sleep(0.2)
-                continue
-            else:
-                break
-        except Exception:
-            if attempt == max_attempts - 1:
-                break
-            time.sleep(0.2)
+        vector = [random.uniform(-0.1, 0.1) for _ in range(3072)]
 
-    import random
-    random.seed(hash(text))
-    return [random.uniform(-0.1, 0.1) for _ in range(3072)]
+    if len(vector) < 3072:
+        vector = vector + [0.0] * (3072 - len(vector))
+    elif len(vector) > 3072:
+        vector = vector[:3072]
+
+    return vector
 
 # Auto-sync uploads directory on startup to ensure all newly added files are in Qdrant
 def auto_sync_uploads_directory():
@@ -613,7 +615,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             "Do not use exclamation points."
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?alt=sse&key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
         payload = {
             "contents": [{
                 "parts": [{"text": f"Context:\n{context_str}\n\nQuestion: {question}"}]

@@ -6,6 +6,7 @@ import { requireAdmin } from '../../middleware/rbac.js';
 const router = Router();
 
 router.get('/logs', requireAuth, requireAdmin, getSearchLogs);
+router.get('/search-logs', requireAuth, requireAdmin, getSearchLogs);
 router.get('/export', requireAuth, requireAdmin, exportSearchLogsCSV);
 router.get('/stats', requireAuth, requireAdmin, getAIAnalytics);
 
