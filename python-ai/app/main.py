@@ -435,6 +435,14 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         bool(re.search(r'\b(how many|count|number of|total|list|show)\b.*\b(file|files|fiel|fiels|doc|docs|resource|resources)\b', q_clean))
     )
     
+    # Merge MongoDB document database metadata with Qdrant vector database
+    if payload.documents and isinstance(payload.documents, list):
+        for d in payload.documents:
+            t = d.get("title")
+            st = d.get("source_type", "file")
+            if t and t not in unique_docs:
+                unique_docs[t] = st
+
     if is_inventory_query:
         if not unique_docs:
             msg = "There are no connected resources or documents currently indexed in your workspace."
