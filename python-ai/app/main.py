@@ -282,6 +282,9 @@ def index_document(payload: IndexRequest):
             idx, chunk = item
             vector = generate_embedding(chunk)
             point_id = f"{payload.document_id}-{idx}"
+            file_url = ""
+            if payload.file_path and isinstance(payload.file_path, str):
+                file_url = f"file:///{payload.file_path.replace(os.sep, '/')}"
             return PointStruct(
                 id=abs(int(hashlib.md5(point_id.encode()).hexdigest(), 16)) % (10 ** 15),
                 vector=vector,
@@ -291,7 +294,7 @@ def index_document(payload: IndexRequest):
                     "source_type": payload.source_type,
                     "org_id": payload.org_id,
                     "content": chunk,
-                    "source_url": f"file:///{payload.file_path.replace(os.sep, '/')}" if payload.file_path else ""
+                    "source_url": file_url
                 }
             )
 
