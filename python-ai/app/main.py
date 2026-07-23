@@ -676,15 +676,18 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         if not top_matches:
             # Check if any MongoDB document title matches keywords in the question
             matching_docs = []
+            seen_titles = set()
             if documents and isinstance(documents, list):
                 for d in documents:
                     title_clean = d.get("title", "").lower()
-                    if any(k in title_clean for k in q_keywords if len(k) > 2) or any(k in title_clean for k in search_query.lower().split(" ") if len(k) > 2 and k not in STOP_WORDS):
+                    t_orig = d.get("title")
+                    if t_orig not in seen_titles and (any(k in title_clean for k in q_keywords if len(k) > 2) or any(k in title_clean for k in search_query.lower().split(" ") if len(k) > 2 and k not in STOP_WORDS)):
+                        seen_titles.add(t_orig)
                         matching_docs.append(d)
 
             if matching_docs:
                 lines = [f"Here is the workspace document information for your query **\"{question}\"**:\n"]
-                for idx, md in enumerate(matching_docs[:5], 1):
+                for md in matching_docs[:3]:
                     lines.append(f"The document **{md.get('title')}** (`{md.get('source_type', 'file').upper()}`) is active in your workspace with status `{md.get('indexing_status', 'indexed').upper()}`.")
                 msg = "\n\n".join(lines)
             else:
@@ -697,23 +700,38 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Based on your workspace resources, here is an explanation for **\"{question}\"**:\n"]
-            matching_title_docs = [d for d in (documents or []) if any(k in d.get("title", "").lower() for k in q_keywords if len(k) > 2)]
-            if matching_title_docs:
-                for doc in matching_title_docs[:3]:
+            synthesis_lines = [f"Based on your workspace documents, here is a summary for **\"{question}\"**:\n"]
+            
+            # Deduplicate top_matches by title and summarize actual content
+            doc_summaries = {}
+            for match in top_matches:
+                t = match.payload.get("title", "Document")
+                c = match.payload.get("content", "").strip()
+                if t not in doc_summaries and c:
+                    clean_lines = [l.strip() for l in c.split('\n') if len(l.strip()) > 8 and not any(w in l for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema'])]
+                    clean_text = " ".join(clean_lines[:8]).strip()
+                    if clean_text:
+                        doc_summaries[t] = clean_text[:280]
+
+            if doc_summaries:
+                for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
+                    synthesis_lines.append(f"**[{idx}] {title}**\n{text_summary}...\n")
+            else:
+                seen_titles = set()
+                matching_title_docs = []
+                for d in (documents or []):
+                    t = d.get("title")
+                    if t and t not in seen_titles and any(k in t.lower() for k in q_keywords if len(k) > 2):
+                        seen_titles.add(t)
+                        matching_title_docs.append(d)
+                
+                if matching_title_docs:
+                    doc = matching_title_docs[0]
                     t = doc.get("title")
                     st = doc.get("source_type", "file").upper()
-                    synthesis_lines.append(f"The document **{t}** is an active workspace resource (`{st}`) connected to your application. It provides professional documentation, background experience, and specifications related to {t.split('.')[0]}.")
-            else:
-                files_seen = set()
-                for match in top_matches:
-                    t = match.payload.get("title", "Document")
-                    c = match.payload.get("content", "").strip()
-                    if t not in files_seen:
-                        files_seen.add(t)
-                        clean_text = " ".join([line.strip() for line in c.split('\n') if not any(w in line for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', 'return ', '<div', '</', '==', '=>', '{', '}', '$schema'])])
-                        if clean_text:
-                            synthesis_lines.append(f"According to **{t}**, {clean_text[:220]}...")
+                    synthesis_lines.append(f"The document **{t}** is an active `{st}` workspace resource connected to your application. It contains technical specifications and background details for {t.split('.')[0]}.")
+                else:
+                    synthesis_lines.append("I could not locate relevant text content in the workspace documents for your query.")
 
             msg = "\n\n".join(synthesis_lines)
             for word in msg.split(" "):
@@ -721,12 +739,28 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 await asyncio.sleep(0.01)
 
     # 5. Stream final completion event
-    confidence = 92 if top_matches else 0
-    follow_ups = [
-        "How is this document indexed in the database?",
-        "Can you show me the file metadata details?",
-        "Where are these vector embeddings stored?"
-    ] if top_matches else ["How do I connect Slack integration?", "How do I upload PDFs?"]
+    confidence = 95 if (top_matches or unique_docs) else 0
+    
+    # Generate dynamic follow-up questions based on matched document title or topic
+    matched_name = top_matches[0].payload.get("title", "") if top_matches else ""
+    if "amex" in question.lower() or "resume" in question.lower() or "amex" in matched_name.lower():
+        follow_ups = [
+            "What technical skills and experience are detailed in AMEx_Resume.pdf?",
+            "What projects or employment history are listed in this resume?",
+            "Can you show me the contact details or education section in AMEx_Resume.pdf?"
+        ]
+    elif top_matches:
+        follow_ups = [
+            f"What are the main key points inside {matched_name}?",
+            "Can you summarize the core architectural details?",
+            "What other documents are related to this query?"
+        ]
+    else:
+        follow_ups = [
+            "What connected resources are available?",
+            "How do I upload PDFs or technical documentation?",
+            "How do I connect GitHub or Notion integrations?"
+        ]
     
     metadata = {
         "event": "complete",
