@@ -1674,12 +1674,20 @@ export const getNotionFiles = async (req, res) => {
     const { orgId } = req.user;
     let integration = await Integration.findOne({ orgId, sourceType: 'notion' });
 
+    let tokensToTry = [];
     if (integration && integration.credentials && integration.credentials.accessToken) {
-      const token = integration.credentials.accessToken;
-      if (!token.startsWith('mock-') && token !== 'notion_mock_token') {
-        try {
-          const resData = await notionFetch('/search', token, 'POST', { page_size: 100 });
-          const pages = (resData.results || []).map(p => {
+      tokensToTry.push(integration.credentials.accessToken);
+    }
+    if (process.env.NOTION_CLIENT_SECRET && (process.env.NOTION_CLIENT_SECRET.startsWith('secret_') || process.env.NOTION_CLIENT_SECRET.startsWith('ntn_'))) {
+      tokensToTry.push(process.env.NOTION_CLIENT_SECRET);
+    }
+
+    for (const token of tokensToTry) {
+      if (!token || token === 'mock-oauth-token-notion') continue;
+      try {
+        const resData = await notionFetch('/search', token, 'POST', { page_size: 100 });
+        if (resData && Array.isArray(resData.results)) {
+          const pages = resData.results.map(p => {
             let title = '';
             if (p.object === 'database' && p.title && Array.isArray(p.title) && p.title.length > 0) {
               title = p.title.map(t => t.plain_text).join('');
@@ -1707,9 +1715,9 @@ export const getNotionFiles = async (req, res) => {
             };
           });
           return res.json(pages);
-        } catch (err) {
-          logger.error(`Failed to fetch real Notion pages: ${err.message}`);
         }
+      } catch (err) {
+        logger.error(`Notion search attempt failed with token: ${err.message}`);
       }
     }
 

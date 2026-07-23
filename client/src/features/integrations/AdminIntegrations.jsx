@@ -667,29 +667,6 @@ function AdminIntegrations() {
               ) : (
                 <>
                   <div className="space-y-3">
-                    {/* Add Custom Notion Page / Token Input */}
-                    <div className="rounded-control border border-border-hairline bg-background-sidebar p-3 space-y-2">
-                      <label className="text-[11px] font-semibold text-text-primary block">
-                        Add Your Own Notion Page URL or API Key:
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={customNotionInput}
-                          onChange={(e) => setCustomNotionInput(e.target.value)}
-                          placeholder="Paste Notion page URL or API key (e.g. https://notion.so/...)"
-                          className="flex-1 rounded border border-border-hairline bg-background-page px-3 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:border-brand-teal focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddCustomNotionPage}
-                          className="rounded bg-brand-teal px-3 py-1.5 text-xs font-semibold text-background-page hover:bg-brand-teal-light transition-colors whitespace-nowrap"
-                        >
-                          + Add Page
-                        </button>
-                      </div>
-                    </div>
-
                     <input
                       type="text"
                       value={notionSearch}
