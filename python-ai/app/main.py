@@ -262,6 +262,8 @@ def start_auto_sync_thread():
     threading.Thread(target=auto_sync_uploads_directory, daemon=True).start()
 
 # POST: Index uploaded file
+@app.post("/index")
+def index_document(payload: IndexRequest):
     try:
         if payload.content and isinstance(payload.content, str) and payload.content.strip():
             text = payload.content
