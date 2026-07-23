@@ -764,6 +764,9 @@ function AdminIntegrations() {
               )}
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
       {/* GitHub Connector Modal */}
       <AnimatePresence>
         {showGitHubModal && (
