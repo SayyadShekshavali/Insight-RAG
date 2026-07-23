@@ -281,102 +281,101 @@ export const askAI = async (req, res) => {
 
   let assistantContent = '';
   let citations = [];
-  let confidence = 85; // default fallback
+  let confidence = 85;
   let followUpQuestions = [];
   let pyBuffer = '';
 
-  const client = pythonUrl.protocol === 'https:' ? https : http;
-  const pyReq = client.request(options, (pyRes) => {
-    pyRes.setTimeout(120000);
-    pyRes.on('data', async (chunk) => {
-      const text = chunk.toString();
-      
-      // Node.js streams back the chunk to React client
-      res.write(text);
+  try {
+    const pythonEndpoint = `${(process.env.PYTHON_AI_URL || 'http://localhost:8000').replace(/\/$/, '')}/ask`;
+    const pyRes = await fetch(pythonEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: postData
+    });
 
-      // Parse chunk lines safely with buffer
-      pyBuffer += text;
-      const lines = pyBuffer.split('\n');
-      pyBuffer = lines.pop() || '';
+    if (!pyRes.ok || !pyRes.body) {
+      throw new Error(`Python AI endpoint returned status ${pyRes.status}`);
+    }
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (trimmedLine.startsWith('data: ')) {
-          try {
-            const parsed = JSON.parse(trimmedLine.substring(6));
-            if (parsed.event === 'token') {
-              assistantContent += parsed.text;
-            } else if (parsed.event === 'complete') {
-              citations = parsed.citations || [];
-              confidence = parsed.confidence || 85;
-              followUpQuestions = parsed.followUpQuestions || [];
-            }
-          } catch (e) {
-            // Ignore incomplete chunks / partial lines
+    const reader = pyRes.body.getReader();
+    const decoder = new TextDecoder();
+    let finished = false;
+
+    while (!finished) {
+      const { value, done } = await reader.read();
+      finished = done;
+      if (value) {
+        const text = decoder.decode(value, { stream: !done });
+        res.write(text);
+
+        pyBuffer += text;
+        const lines = pyBuffer.split('\n');
+        pyBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(trimmedLine.substring(6));
+              if (parsed.event === 'token') {
+                assistantContent += parsed.text;
+              } else if (parsed.event === 'complete') {
+                citations = parsed.citations || [];
+                confidence = parsed.confidence || 85;
+                followUpQuestions = parsed.followUpQuestions || [];
+              }
+            } catch (e) {}
           }
         }
       }
-    });
+    }
 
-    pyRes.on('end', async () => {
-      if (pyBuffer.trim().startsWith('data: ')) {
-        try {
-          const parsed = JSON.parse(pyBuffer.trim().substring(6));
-          if (parsed.event === 'token') {
-            assistantContent += parsed.text;
-          } else if (parsed.event === 'complete') {
-            citations = parsed.citations || [];
-            confidence = parsed.confidence || 85;
-            followUpQuestions = parsed.followUpQuestions || [];
-          }
-        } catch (e) {}
-      }
+    if (pyBuffer.trim().startsWith('data: ')) {
       try {
-        // Save complete assistant turn to DB
-        thread.messages.push({
-          role: 'assistant',
-          content: assistantContent || 'Sorry, I could not synthesize an answer from the indexed documentation.',
-          citations,
-          confidence,
-          followUpQuestions
-        });
-        await thread.save();
+        const parsed = JSON.parse(pyBuffer.trim().substring(6));
+        if (parsed.event === 'token') {
+          assistantContent += parsed.text;
+        } else if (parsed.event === 'complete') {
+          citations = parsed.citations || [];
+          confidence = parsed.confidence || 85;
+          followUpQuestions = parsed.followUpQuestions || [];
+        }
+      } catch (e) {}
+    }
 
-        // Log the search for Admin analytics
-        const searchLog = new SearchLog({
-          userId,
-          orgId,
-          question,
-          sourcesUsed: citations.map(c => c.sourceType),
-          confidence,
-          feedback: null
-        });
-        await searchLog.save();
-
-        // Send search log ID to client for thumbs up/down feedback
-        res.write(`data: ${JSON.stringify({ event: 'search_log_created', logId: searchLog._id })}\n\n`);
-
-      } catch (err) {
-        logger.error(`Error saving assistant response to DB: ${err.message}`);
-      }
-      res.end();
+    // Save turn to DB & log search
+    thread.messages.push({
+      role: 'assistant',
+      content: assistantContent || 'I could not locate relevant information in the connected workspace resources to answer your question.',
+      citations,
+      confidence,
+      followUpQuestions
     });
-  });
+    await thread.save();
 
-  pyReq.on('error', (err) => {
+    const searchLog = new SearchLog({
+      userId,
+      orgId,
+      question,
+      sourcesUsed: citations.map(c => c.sourceType),
+      confidence,
+      feedback: null
+    });
+    await searchLog.save();
+
+    res.write(`data: ${JSON.stringify({ event: 'search_log_created', logId: searchLog._id })}\n\n`);
+    res.end();
+
+  } catch (err) {
     logger.error(`Connection to Python AI service failed: ${err.message}`);
-    // Write friendly error to SSE stream and close
     const errorPayload = {
       event: 'token',
-      text: 'The AI pipeline is currently offline or indexing. Please verify your Python service is running on port 8000.'
+      text: 'I could not locate relevant information in the connected workspace resources to answer your question. Could you please elaborate more on your question so I can search better?'
     };
     res.write(`data: ${JSON.stringify(errorPayload)}\n\n`);
-    res.write(`data: ${JSON.stringify({ event: 'complete', confidence: 0, citations: [], followUpQuestions: [] })}\n\n`);
+    res.write(`data: ${JSON.stringify({ event: 'complete', confidence: 0, citations: [], followUpQuestions: ['What resources are connected?', 'How do I upload files?'] })}\n\n`);
     res.end();
-  });
-
-  pyReq.write(postData);
-  pyReq.end();
+  }
 };
 
 // Log search feedback (thumbs up / down)
