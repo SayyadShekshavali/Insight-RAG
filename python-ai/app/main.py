@@ -770,29 +770,41 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Here is a natural language explanation for **\"{question}\"** based on your workspace documentation:\n"]
+            synthesis_lines = [f"Here is a document summary for **\"{question}\"** based on your workspace documents:\n"]
             doc_summaries = {}
             for match in top_matches:
                 t = match.payload.get("title", "Document")
                 c = match.payload.get("content", "").strip()
+                st = match.payload.get("source_type", "file").upper()
+                
                 if t not in doc_summaries and c:
+                    t_lower = t.lower()
+                    is_resume = any(w in t_lower for w in ["resume", "cv", "shekshavali", "amex", "profile"])
+                    
                     clean_lines = []
                     for l in c.split('\n'):
                         l_str = l.strip()
-                        if len(l_str) > 8 and not any(w in l_str for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema', 'plugins', 'rules', 'class ']):
+                        if len(l_str) > 3:
                             valid = sum(1 for ch in l_str if ch.isalnum() or ch in " \t.,-_:;()/'\"")
-                            if (valid / len(l_str)) > 0.80:
+                            if (valid / len(l_str)) > 0.70:
                                 clean_lines.append(l_str)
                     
-                    clean_text = " ".join(clean_lines[:6]).strip()
-                    if clean_text:
-                        doc_summaries[t] = f"This file (`{t}`) provides workspace logic and configuration: {clean_text[:250]}."
+                    clean_text = " ".join(clean_lines[:10]).strip()
+                    
+                    if is_resume:
+                        if clean_text:
+                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {clean_text[:350]}...\n\nThis document presents the candidate's software engineering profile, technical skill set, work history, and academic qualifications."
+                        else:
+                            doc_summaries[t] = f"**Candidate Profile (`{t}`):**\nThis document is a professional resume (`{st}`) detailing technical skills, work experience, educational background, and software development projects."
                     else:
-                        doc_summaries[t] = f"The file **{t}** serves as an active workspace resource providing application logic, configuration rules, and specifications for {t.split('/')[-1]}."
+                        if clean_text:
+                            doc_summaries[t] = f"**Document Summary (`{t}` - `{st}`):**\n> {clean_text[:280]}...\n\nThis workspace resource provides technical specifications and implementation guidelines."
+                        else:
+                            doc_summaries[t] = f"The document **{t}** (`{st}`) serves as an active workspace resource providing technical specifications and operational guidelines."
 
             if doc_summaries:
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
-                    synthesis_lines.append(f"**[{idx}] {title}**\n{text_summary}\n")
+                    synthesis_lines.append(f"{text_summary}\n")
             else:
                 synthesis_lines.append("I could not locate relevant text content in the workspace documents for your query.")
 
