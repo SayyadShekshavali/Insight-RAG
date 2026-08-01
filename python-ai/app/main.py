@@ -675,12 +675,14 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {match.payload['content']}\n\n"
             
         system_instruction = (
-            "You are Insight RAG, an AI-powered internal knowledge assistant designed to help employees understand "
-            "the company's codebase and documentation. "
-            "CRITICAL INSTRUCTION: When the user asks about a specific file (e.g. .oxlintrc.json or AMEx_Resume.pdf), "
-            "your response MUST focus STRICTLY AND EXCLUSIVELY on the contents of that requested file. "
-            "Do NOT mention, cite, or mix in information from any other files. "
-            "Ground your answer 100% in the provided file context. Explain clearly in fluent English sentences."
+            "You are Insight RAG, an AI-powered internal knowledge assistant designed to help engineering teams and employees. "
+            "PRIMARY INSTRUCTION: Answer the user's question using clear, structured, professional, plain English natural language sentences. "
+            "Do NOT display or paste raw code blocks, JSON objects, import statements, or unformatted code fragments UNLESS the user explicitly asks to see code (e.g., 'show code', 'write code', or 'display snippet'). "
+            "When asked to summarize or explain a component, file, or document (e.g. 'Summarise in words what is the use of it?'), "
+            "explain its primary purpose, what it is used for, key rules/features, and how it works in plain conversational words. "
+            "CRITICAL CONTEXT RULE: If the user asks about a specific file (e.g. .oxlintrc.json or AMEx_Resume.pdf), "
+            "focus STRICTLY AND EXCLUSIVELY on that requested file. Do NOT mix in or cite information from unrelated files. "
+            "Cite source files using brackets like [1], [2], matching the provided context index."
         )
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
@@ -768,7 +770,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Based on your workspace documents, here is an explanation for **\"{question}\"**:\n"]
+            synthesis_lines = [f"Here is a natural language explanation for **\"{question}\"** based on your workspace documentation:\n"]
             doc_summaries = {}
             for match in top_matches:
                 t = match.payload.get("title", "Document")
@@ -777,16 +779,16 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     clean_lines = []
                     for l in c.split('\n'):
                         l_str = l.strip()
-                        if len(l_str) > 8 and not any(w in l_str for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema']):
+                        if len(l_str) > 8 and not any(w in l_str for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema', 'plugins', 'rules', 'class ']):
                             valid = sum(1 for ch in l_str if ch.isalnum() or ch in " \t.,-_:;()/'\"")
                             if (valid / len(l_str)) > 0.80:
                                 clean_lines.append(l_str)
                     
-                    clean_text = " ".join(clean_lines[:8]).strip()
+                    clean_text = " ".join(clean_lines[:6]).strip()
                     if clean_text:
-                        doc_summaries[t] = clean_text[:280]
+                        doc_summaries[t] = f"This file (`{t}`) provides workspace logic and configuration: {clean_text[:250]}."
                     else:
-                        doc_summaries[t] = f"The document **{t}** is an indexed workspace resource containing technical specifications and background details."
+                        doc_summaries[t] = f"The file **{t}** serves as an active workspace resource providing application logic, configuration rules, and specifications for {t.split('/')[-1]}."
 
             if doc_summaries:
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
