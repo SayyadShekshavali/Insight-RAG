@@ -29,6 +29,24 @@ from rank_bm25 import BM25Okapi
 
 load_dotenv()
 
+def clean_pdf_text(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    lines = raw_text.split('\n')
+    valid_lines = []
+    for line in lines:
+        l = line.strip()
+        if not l:
+            continue
+        if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<"]):
+            continue
+        if l.startswith("<<") or l.endswith(">>") or l.startswith("%"):
+            continue
+        valid_chars = sum(1 for ch in l if ch.isalnum() or ch in " \t.,-_:;()/'\"@")
+        if len(l) > 0 and (valid_chars / len(l)) >= 0.70:
+            valid_lines.append(l)
+    return " ".join(valid_lines)
+
 app = FastAPI(title="Insight RAG AI Service", version="1.0.0")
 
 app.add_middleware(
@@ -668,25 +686,19 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     score += 0.25
             reranked_points.append((score, res))
 
-    # Detect if user query explicitly asks about a specific target file
-    # Example: "TaskPilot/client/.oxlintrc.json" or ".oxlintrc.json" or "AMEx_Resume.pdf"
-    target_file_name = None
-    file_matches = re.findall(r'[\w\-\.\/]+\.[a-zA-Z0-9]+', question)
-    if file_matches:
-        for candidate in file_matches:
-            cand_clean = candidate.lower().strip()
-            if cand_clean not in ["json", "jsx", "tsx", "pdf", "docx", "txt", "js", "html", "css"]:
-                for pt_tuple in reranked_points:
-                    pt = pt_tuple[1]
-                    pt_t = (pt.payload.get("title", "") if pt.payload else "").lower()
-                    if cand_clean in pt_t or pt_t.endswith(cand_clean):
-                        target_file_name = pt.payload.get("title")
-                        break
-            if target_file_name:
-                break
-
-    # STRICT ISOLATION: If a specific target file is identified in the query, use ONLY chunks from that file!
-    if target_file_name:
+    # Subject Category Isolation (e.g. "Explain about each resumes in brief")
+    # If the user's question asks about resumes/CVs, filter top_matches to include ONLY resume documents!
+    q_lower_clean = question.lower()
+    if any(w in q_lower_clean for w in ["resume", "resumes", "cv", "cvs"]):
+        resume_points = [
+            pt_tuple[1] for pt_tuple in reranked_points 
+            if pt_tuple[1].payload and any(k in pt_tuple[1].payload.get("title", "").lower() for k in ["resume", "cv", "shekshavali", "amex", "ds_resume", "profile"])
+        ]
+        if resume_points:
+            top_matches = resume_points[:6]
+        else:
+            top_matches = [item[1] for item in reranked_points[:6]]
+    elif target_file_name:
         target_matches = [pt_tuple[1] for pt_tuple in reranked_points if pt_tuple[1].payload and pt_tuple[1].payload.get("title") == target_file_name]
         if target_matches:
             top_matches = target_matches[:6]
@@ -698,12 +710,13 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     # 3. Format Citations metadata
     citations = []
     for idx, match in enumerate(top_matches):
+        clean_snip = clean_pdf_text(match.payload.get("content", ""))
         citations.append({
             "documentId": match.payload.get("document_id", ""),
             "sourceType": match.payload.get("source_type", "file"),
             "title": match.payload.get("title", f"Document Chunk {idx+1}"),
             "sourceUrl": match.payload.get("source_url", ""),
-            "snippet": match.payload.get("content", "")[:200] + "..."
+            "snippet": clean_snip[:200] + "..." if clean_snip else "Document content chunk"
         })
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -713,7 +726,8 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         # Construct Context Prompt
         context_str = ""
         for idx, match in enumerate(top_matches):
-            context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {match.payload['content']}\n\n"
+            clean_c = clean_pdf_text(match.payload.get('content', ''))
+            context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {clean_c}\n\n"
             
         # Determine intent flavor for prompt framing
         q_lower = question.lower()
@@ -826,24 +840,22 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             doc_summaries = {}
             for match in top_matches:
                 t = match.payload.get("title", "Document")
-                c = match.payload.get("content", "").strip()
+                raw_c = match.payload.get("content", "").strip()
+                c = clean_pdf_text(raw_c) if raw_c else ""
                 st = match.payload.get("source_type", "file").upper()
                 
-                if t not in doc_summaries and c:
+                if t not in doc_summaries:
                     t_lower = t.lower()
-                    is_resume = any(w in t_lower for w in ["resume", "cv", "shekshavali", "amex", "profile"])
-                    
-                    clean_lines = [l.strip() for l in c.split('\n') if len(l.strip()) > 3 and not any(w in l for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema'])]
-                    clean_text = " ".join(clean_lines[:10]).strip()
+                    is_resume = any(w in t_lower for w in ["resume", "cv", "shekshavali", "amex", "ds_resume", "profile"])
                     
                     if is_resume:
-                        if clean_text:
-                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {clean_text[:350]}...\n\nThis resume details the candidate's professional software engineering experience, core technical skills, education, and project background."
+                        if c:
+                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {c[:350]}...\n\nThis resume details the candidate's professional software engineering experience, core technical skills, education, and project background."
                         else:
                             doc_summaries[t] = f"**Candidate Profile (`{t}`):**\nThis document is a candidate resume (`{st}`) presenting technical skills, employment experience, educational qualifications, and software projects."
                     else:
-                        if clean_text:
-                            doc_summaries[t] = f"**File Purpose & Summary (`{t}` - `{st}`):**\n> {clean_text[:280]}...\n\nThis file serves as a core workspace resource defining application logic, architecture rules, and functional specifications."
+                        if c:
+                            doc_summaries[t] = f"**File Purpose & Summary (`{t}` - `{st}`):**\n> {c[:280]}...\n\nThis file serves as a core workspace resource defining application logic, architecture rules, and functional specifications."
                         else:
                             doc_summaries[t] = f"The file **{t}** (`{st}`) is an active workspace resource providing application logic and specifications for {t.split('/')[-1]}."
 
