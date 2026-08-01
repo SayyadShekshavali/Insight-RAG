@@ -674,14 +674,25 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         for idx, match in enumerate(top_matches):
             context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {match.payload['content']}\n\n"
             
+        # Determine intent flavor for prompt framing
+        q_lower = question.lower()
+        intent_instruction = ""
+        if any(w in q_lower for w in ["purpose", "use of", "used for", "what does it do", "role"]):
+            intent_instruction = "The user is asking specifically for the PURPOSE AND USE of the file/component. Explain in plain English what it is used for, why it exists, and its role in the system. Do NOT paste code."
+        elif any(w in q_lower for w in ["key point", "key points", "highlights", "rules", "main points", "features"]):
+            intent_instruction = "The user is asking specifically for KEY POINTS or HIGHLIGHTS. Provide a clear, structured list of key takeaways, rules, or features in plain English sentences. Do NOT paste code."
+        elif any(w in q_lower for w in ["how it works", "how does it work", "workflow", "flow", "process"]):
+            intent_instruction = "The user is asking HOW IT WORKS. Explain the step-by-step workflow, execution logic, and operational process in clear natural language sentences. Do NOT paste code."
+        elif any(w in q_lower for w in ["resume", "cv", "candidate", "profile", "experience", "education"]):
+            intent_instruction = "The user is asking about a CANDIDATE RESUME. Summarize the candidate's professional profile, technical skills, work history, education, and key projects in clear natural language sentences."
+
         system_instruction = (
-            "You are Insight RAG, an AI-powered internal knowledge assistant designed to help engineering teams and employees. "
+            "You are Insight RAG, an AI-powered internal knowledge assistant for technical teams. "
             "PRIMARY INSTRUCTION: Answer the user's question using clear, structured, professional, plain English natural language sentences. "
-            "Do NOT display or paste raw code blocks, JSON objects, import statements, or unformatted code fragments UNLESS the user explicitly asks to see code (e.g., 'show code', 'write code', or 'display snippet'). "
-            "When asked to summarize or explain a component, file, or document (e.g. 'Summarise in words what is the use of it?'), "
-            "explain its primary purpose, what it is used for, key rules/features, and how it works in plain conversational words. "
+            "Do NOT display or paste raw code blocks, JSON objects, import statements, or unformatted code fragments UNLESS the user explicitly asks to see code (e.g. 'show code', 'write code', 'display snippet'). "
+            f"{intent_instruction} "
             "CRITICAL CONTEXT RULE: If the user asks about a specific file (e.g. .oxlintrc.json or AMEx_Resume.pdf), "
-            "focus STRICTLY AND EXCLUSIVELY on that requested file. Do NOT mix in or cite information from unrelated files. "
+            "your response MUST focus STRICTLY AND EXCLUSIVELY on the contents of that requested file. Do NOT mix in or cite information from unrelated files. "
             "Cite source files using brackets like [1], [2], matching the provided context index."
         )
 
@@ -770,7 +781,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
         else:
-            synthesis_lines = [f"Here is a document summary for **\"{question}\"** based on your workspace documents:\n"]
+            synthesis_lines = [f"Here is a natural language summary for **\"{question}\"** based on your workspace documentation:\n"]
             doc_summaries = {}
             for match in top_matches:
                 t = match.payload.get("title", "Document")
@@ -781,26 +792,19 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     t_lower = t.lower()
                     is_resume = any(w in t_lower for w in ["resume", "cv", "shekshavali", "amex", "profile"])
                     
-                    clean_lines = []
-                    for l in c.split('\n'):
-                        l_str = l.strip()
-                        if len(l_str) > 3:
-                            valid = sum(1 for ch in l_str if ch.isalnum() or ch in " \t.,-_:;()/'\"")
-                            if (valid / len(l_str)) > 0.70:
-                                clean_lines.append(l_str)
-                    
+                    clean_lines = [l.strip() for l in c.split('\n') if len(l.strip()) > 3 and not any(w in l for w in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '<div', '</', '=>', '{', '}', '$schema'])]
                     clean_text = " ".join(clean_lines[:10]).strip()
                     
                     if is_resume:
                         if clean_text:
-                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {clean_text[:350]}...\n\nThis document presents the candidate's software engineering profile, technical skill set, work history, and academic qualifications."
+                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {clean_text[:350]}...\n\nThis resume details the candidate's professional software engineering experience, core technical skills, education, and project background."
                         else:
-                            doc_summaries[t] = f"**Candidate Profile (`{t}`):**\nThis document is a professional resume (`{st}`) detailing technical skills, work experience, educational background, and software development projects."
+                            doc_summaries[t] = f"**Candidate Profile (`{t}`):**\nThis document is a candidate resume (`{st}`) presenting technical skills, employment experience, educational qualifications, and software projects."
                     else:
                         if clean_text:
-                            doc_summaries[t] = f"**Document Summary (`{t}` - `{st}`):**\n> {clean_text[:280]}...\n\nThis workspace resource provides technical specifications and implementation guidelines."
+                            doc_summaries[t] = f"**File Purpose & Summary (`{t}` - `{st}`):**\n> {clean_text[:280]}...\n\nThis file serves as a core workspace resource defining application logic, architecture rules, and functional specifications."
                         else:
-                            doc_summaries[t] = f"The document **{t}** (`{st}`) serves as an active workspace resource providing technical specifications and operational guidelines."
+                            doc_summaries[t] = f"The file **{t}** (`{st}`) is an active workspace resource providing application logic and specifications for {t.split('/')[-1]}."
 
             if doc_summaries:
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
