@@ -439,7 +439,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
 
     # Check if query is asking about file/resource count or inventory
     is_inventory_query = (
-        "fiels" in q_clean or
+        "fiels" in q_clean or "docs" in q_clean or "in db" in q_clean or "in database" in q_clean or
         any(phrase in q_clean for phrase in [
             "connected resource", "connected resources", "connected files", "connected documents",
             "resources connected", "resources are connected", "files connected", "documents connected",
@@ -447,23 +447,25 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             "how many resources", "how many files", "how many documents", "what are they", "what are connected",
             "total resources", "total files", "all indexed files", "all files across", "list all files", "list indexed documents", "all documents",
             "how many fiels", "many fiels", "how many file", "many file", "files count", "file count", "count of files",
-            "number of files", "number of fiels", "how many docs", "total docs", "how many", "connected"
+            "number of files", "number of fiels", "how many docs", "total docs", "how many", "connected",
+            "uploaded files", "list of uploaded", "list uploaded", "give list", "give the list", "docs in db", "files in db",
+            "how many doc", "how many doc in db", "how many docs are in db", "how many resource", "how many resources", "resource are connected", "resources connected here"
         ]) or
         bool(re.search(r'\b(how many|count|number of|total|list|show)\b', q_clean))
     )
 
     if is_inventory_query:
         if not unique_docs:
-            msg = "There are no connected resources or documents currently indexed in your workspace."
+            msg = "There are currently 0 connected resources or documents indexed in your workspace database."
         else:
             sources_breakdown = {}
             for t, st in unique_docs.items():
                 sources_breakdown[st] = sources_breakdown.get(st, 0) + 1
                 
-            parts = [f"{cnt} file(s) from {st.upper() if st in ['pdf', 'xlsx', 'docx', 'js'] else st.capitalize()}" for st, cnt in sources_breakdown.items()]
+            parts = [f"{cnt} {st.upper() if st in ['pdf', 'xlsx', 'docx', 'js', 'py', 'json'] else st.capitalize()} document(s)" for st, cnt in sources_breakdown.items()]
             breakdown_str = ", ".join(parts)
             
-            lines = [f"There are **{len(unique_docs)} total resources** connected to your workspace so far ({breakdown_str}):\n"]
+            lines = [f"There are **{len(unique_docs)} total resource(s)** connected to your workspace database ({breakdown_str}):\n"]
             for idx, (t, st) in enumerate(unique_docs.items(), 1):
                 lines.append(f"**{idx}. {t}** (`{st.upper()}`)")
             msg = "\n".join(lines)
@@ -471,7 +473,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         for word in msg.split(" "):
             yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
             await asyncio.sleep(0.01)
-        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each file in detail', 'What is inside AMEx_Resume.pdf?']})}\n\n"
+        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each uploaded file in detail', 'How do I upload more documents?']})}\n\n"
         return
 
 
