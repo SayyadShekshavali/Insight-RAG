@@ -543,7 +543,13 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     reranked_points = []
     
     # Clean query tokens (strip punctuation like ?, !, :, ), (, ], [, etc.)
-    STOP_WORDS = set(["the", "and", "in", "of", "to", "a", "an", "is", "are", "for", "on", "or", "by", "at", "explain", "about", "what", "where", "this", "that", "show", "tell", "does", "with", "from", "have", "repo", "github", "file", "how"])
+    STOP_WORDS = set([
+        "the", "and", "in", "of", "to", "a", "an", "is", "are", "for", "on", "or", "by", "at", 
+        "explain", "about", "what", "where", "this", "that", "show", "tell", "does", "with", 
+        "from", "have", "repo", "github", "file", "files", "how", "main", "key", "point", 
+        "points", "inside", "content", "contents", "summary", "overview", "detail", "details", 
+        "describe", "give", "list", "code", "codebase"
+    ])
     q_raw_words = re.findall(r'[a-zA-Z0-9_\-\./()]+', search_query.lower())
     q_keywords = [w.strip('?!:;,."\'()[]{}').lower() for w in q_raw_words if len(w.strip('?!:;,."\'()[]{}')) > 2 and w.strip('?!:;,."\'()[]{}').lower() not in STOP_WORDS]
     
@@ -602,7 +608,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     elif vector_results:
         # Fallback to vector search results only if corpus scroll fails
         q_raw_words = re.findall(r'[a-zA-Z0-9_\-\./()]+', question.lower())
-        q_keywords = [w.strip('?!:;,."\'()[]{}').lower() for w in q_raw_words if len(w.strip('?!:;,."\'()[]{}')) > 2 and w.strip('?!:;,."\'()[]{}') not in ["explain", "about", "what", "where", "this", "that", "show", "tell", "does", "with", "from", "have", "repo", "github", "file"]]
+        q_keywords = [w.strip('?!:;,."\'()[]{}').lower() for w in q_raw_words if len(w.strip('?!:;,."\'()[]{}')) > 2 and w.strip('?!:;,."\'()[]{}') not in STOP_WORDS]
         
         reranked_points = []
         for res in vector_results:
@@ -621,7 +627,32 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     score += 0.25
             reranked_points.append((score, res))
 
-    top_matches = [item[1] for item in reranked_points[:6]]
+    # Detect if user query explicitly asks about a specific target file
+    # Example: "TaskPilot/client/.oxlintrc.json" or ".oxlintrc.json" or "AMEx_Resume.pdf"
+    target_file_name = None
+    file_matches = re.findall(r'[\w\-\.\/]+\.[a-zA-Z0-9]+', question)
+    if file_matches:
+        for candidate in file_matches:
+            cand_clean = candidate.lower().strip()
+            if cand_clean not in ["json", "jsx", "tsx", "pdf", "docx", "txt", "js", "html", "css"]:
+                for pt_tuple in reranked_points:
+                    pt = pt_tuple[1]
+                    pt_t = (pt.payload.get("title", "") if pt.payload else "").lower()
+                    if cand_clean in pt_t or pt_t.endswith(cand_clean):
+                        target_file_name = pt.payload.get("title")
+                        break
+            if target_file_name:
+                break
+
+    # STRICT ISOLATION: If a specific target file is identified in the query, use ONLY chunks from that file!
+    if target_file_name:
+        target_matches = [pt_tuple[1] for pt_tuple in reranked_points if pt_tuple[1].payload and pt_tuple[1].payload.get("title") == target_file_name]
+        if target_matches:
+            top_matches = target_matches[:6]
+        else:
+            top_matches = [item[1] for item in reranked_points[:6]]
+    else:
+        top_matches = [item[1] for item in reranked_points[:6]]
 
     # 3. Format Citations metadata
     citations = []
@@ -644,12 +675,12 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             context_str += f"[{idx + 1}] File: {match.payload['title']}\nContent: {match.payload['content']}\n\n"
             
         system_instruction = (
-            "You are Insight RAG, an AI-powered internal knowledge assistant designed to help employees quickly understand "
-            "the company's codebase, documentation, onboarding guides, architecture notes, SOPs, and workflows. "
-            "Answer the user's question using ONLY the provided internal company context. "
-            "Provide clear, professional, fluent English explanations grounded 100% in the company's internal knowledge base. "
-            "Do NOT fabricate, hallucinate, or dump raw unformatted code blocks unless explicitly requested. "
-            "Cite source documents using brackets like [1], [2], matching the provided context index."
+            "You are Insight RAG, an AI-powered internal knowledge assistant designed to help employees understand "
+            "the company's codebase and documentation. "
+            "CRITICAL INSTRUCTION: When the user asks about a specific file (e.g. .oxlintrc.json or AMEx_Resume.pdf), "
+            "your response MUST focus STRICTLY AND EXCLUSIVELY on the contents of that requested file. "
+            "Do NOT mention, cite, or mix in information from any other files. "
+            "Ground your answer 100% in the provided file context. Explain clearly in fluent English sentences."
         )
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
