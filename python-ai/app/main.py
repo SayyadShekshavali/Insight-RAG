@@ -455,25 +455,45 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
     )
 
     if is_inventory_query:
-        if not unique_docs:
-            msg = "There are currently 0 connected resources or documents indexed in your workspace database."
+        lines = ["Here is a complete breakdown of all **connected resources and integrations** in your workspace:\n"]
+        
+        # 1. Integrations Breakdown (GitHub, Notion, Google Drive, Slack, Jira, Confluence)
+        active_integrations = []
+        if integrations and isinstance(integrations, list):
+            for integ in integrations:
+                st = integ.get("sourceType", "").capitalize()
+                status = integ.get("status", "connected").capitalize()
+                if st:
+                    active_integrations.append(f"- **{st} Integration**: Status `{status}`")
+
+        if active_integrations:
+            lines.append(f"### 🔗 Connected Integrations ({len(active_integrations)} Active)")
+            lines.extend(active_integrations)
+            lines.append("")
         else:
+            lines.append("### 🔗 Connected Integrations")
+            lines.append("No third-party integrations (GitHub, Notion, Slack, Jira) are currently connected.\n")
+
+        # 2. Workspace Documents Breakdown
+        if unique_docs:
             sources_breakdown = {}
             for t, st in unique_docs.items():
                 sources_breakdown[st] = sources_breakdown.get(st, 0) + 1
-                
-            parts = [f"{cnt} {st.upper() if st in ['pdf', 'xlsx', 'docx', 'js', 'py', 'json'] else st.capitalize()} document(s)" for st, cnt in sources_breakdown.items()]
+            parts = [f"{cnt} {st.upper() if st in ['pdf', 'xlsx', 'docx', 'js', 'py', 'json'] else st.capitalize()}" for st, cnt in sources_breakdown.items()]
             breakdown_str = ", ".join(parts)
             
-            lines = [f"There are **{len(unique_docs)} total resource(s)** connected to your workspace database ({breakdown_str}):\n"]
+            lines.append(f"### 📁 Workspace Documents ({len(unique_docs)} Files - {breakdown_str})")
             for idx, (t, st) in enumerate(unique_docs.items(), 1):
-                lines.append(f"**{idx}. {t}** (`{st.upper()}`)")
-            msg = "\n".join(lines)
-            
+                lines.append(f"{idx}. **{t}** (`{st.upper()}`)")
+        else:
+            lines.append("### 📁 Workspace Documents")
+            lines.append("No uploaded files or documents currently in workspace database.")
+
+        msg = "\n".join(lines)
         for word in msg.split(" "):
             yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
             await asyncio.sleep(0.01)
-        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each uploaded file in detail', 'How do I upload more documents?']})}\n\n"
+        yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': ['Describe each connected resource', 'How do I connect GitHub or Notion integrations?']})}\n\n"
         return
 
 
