@@ -437,21 +437,62 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             if t and t not in unique_docs:
                 unique_docs[t] = st
 
-    # Check if query is asking about file/resource count or inventory
+    # Check if user specifically asks to list a targeted subject (e.g. "resumes", "pdfs", "controllers", "routes")
+    q_words = set(q_clean.split())
+    is_subject_list = any(w in q_clean for w in ["resume", "resumes", "cv", "cvs", "profile", "profiles", "pdf", "pdfs", "controller", "controllers", "route", "routes", "schema", "schemas"])
+    
+    if is_subject_list and any(w in q_clean for w in ["list", "show", "give", "display", "get", "find", "uploaded", "all"]):
+        # Subject-based document filter
+        matching_docs = []
+        target_subject = ""
+        
+        if any(w in q_clean for w in ["resume", "resumes", "cv", "cvs"]):
+            target_subject = "Candidate Resumes"
+            for t, st in unique_docs.items():
+                t_lower = t.lower()
+                if any(k in t_lower for k in ["resume", "cv", "shekshavali", "amex", "ds_resume", "profile"]):
+                    matching_docs.append((t, st))
+        elif any(w in q_clean for w in ["pdf", "pdfs"]):
+            target_subject = "PDF Documents"
+            for t, st in unique_docs.items():
+                if st == "pdf" or t.lower().endswith(".pdf"):
+                    matching_docs.append((t, st))
+        elif any(w in q_clean for w in ["controller", "controllers"]):
+            target_subject = "Controllers"
+            for t, st in unique_docs.items():
+                if "controller" in t.lower():
+                    matching_docs.append((t, st))
+        elif any(w in q_clean for w in ["route", "routes"]):
+            target_subject = "Routes"
+            for t, st in unique_docs.items():
+                if "route" in t.lower():
+                    matching_docs.append((t, st))
+
+        if matching_docs:
+            lines = [f"Here are the **{target_subject}** ({len(matching_docs)} item(s)) currently available in your workspace:\n"]
+            for idx, (t, st) in enumerate(matching_docs, 1):
+                lines.append(f"{idx}. **{t}** (`{st.upper()}`)")
+            msg = "\n".join(lines)
+            for word in msg.split(" "):
+                yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
+                await asyncio.sleep(0.01)
+            yield f"data: {json.dumps({'event': 'complete', 'confidence': 100, 'citations': [], 'followUpQuestions': [f'Summarize {matching_docs[0][0]}', 'What other resources are connected?']})}\n\n"
+            return
+
+    # Check if query is asking about overall file/resource count or total inventory
     is_inventory_query = (
         "fiels" in q_clean or "docs" in q_clean or "in db" in q_clean or "in database" in q_clean or
         any(phrase in q_clean for phrase in [
             "connected resource", "connected resources", "connected files", "connected documents",
             "resources connected", "resources are connected", "files connected", "documents connected",
-            "connected so far", "what resources", "what files are connected", "list connected", "show connected",
-            "how many resources", "how many files", "how many documents", "what are they", "what are connected",
-            "total resources", "total files", "all indexed files", "all files across", "list all files", "list indexed documents", "all documents",
+            "connected so far", "what resources", "what files are connected",
+            "how many resources", "how many files", "how many documents", "what are connected",
+            "total resources", "total files", "all indexed files", "all files across", "list all files", "list indexed documents",
             "how many fiels", "many fiels", "how many file", "many file", "files count", "file count", "count of files",
-            "number of files", "number of fiels", "how many docs", "total docs", "how many", "connected",
+            "number of files", "number of fiels", "how many docs", "total docs", "how many",
             "uploaded files", "list of uploaded", "list uploaded", "give list", "give the list", "docs in db", "files in db",
             "how many doc", "how many doc in db", "how many docs are in db", "how many resource", "how many resources", "resource are connected", "resources connected here"
-        ]) or
-        bool(re.search(r'\b(how many|count|number of|total|list|show)\b', q_clean))
+        ])
     )
 
     if is_inventory_query:
