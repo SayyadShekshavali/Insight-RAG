@@ -29,23 +29,40 @@ from rank_bm25 import BM25Okapi
 
 load_dotenv()
 
-def clean_pdf_text(raw_text: str) -> str:
-    if not raw_text:
-        return ""
+def validate_and_clean_content(raw_text: str):
+    """
+    Strips raw PDF stream objects, binary noise, and parser artifacts.
+    Returns tuple (cleaned_text, is_valid)
+    """
+    if not raw_text or not isinstance(raw_text, str):
+        return "", False
+        
     lines = raw_text.split('\n')
     valid_lines = []
+    
     for line in lines:
         l = line.strip()
         if not l:
             continue
-        if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<"]):
+        # Reject raw PDF object markers, dictionaries, stream keywords
+        if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<", "stream", "endstream"]):
             continue
-        if l.startswith("<<") or l.endswith(">>") or l.startswith("%"):
+        if l.startswith("<<") or l.endswith(">>") or l.startswith("%") or (l.startswith("/") and ":" not in l):
             continue
-        valid_chars = sum(1 for ch in l if ch.isalnum() or ch in " \t.,-_:;()/'\"@")
+        if re.search(r'\d+\s+\d+\s+obj', l):
+            continue
+            
+        valid_chars = sum(1 for ch in l if ch.isalnum() or ch in " \t.,-_:;()/'\"@#&$%*+=<>![]{}")
         if len(l) > 0 and (valid_chars / len(l)) >= 0.70:
             valid_lines.append(l)
-    return " ".join(valid_lines)
+            
+    cleaned = " ".join(valid_lines).strip()
+    is_valid = len(cleaned) >= 20 and len(cleaned.split()) >= 3
+    return cleaned, is_valid
+
+def clean_pdf_text(raw_text: str) -> str:
+    cleaned, _ = validate_and_clean_content(raw_text)
+    return cleaned
 
 app = FastAPI(title="Insight RAG AI Service", version="1.0.0")
 
@@ -841,7 +858,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             for match in top_matches:
                 t = match.payload.get("title", "Document")
                 raw_c = match.payload.get("content", "").strip()
-                c = clean_pdf_text(raw_c) if raw_c else ""
+                c, is_valid_text = validate_and_clean_content(raw_c)
                 st = match.payload.get("source_type", "file").upper()
                 
                 if t not in doc_summaries:
@@ -849,15 +866,31 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     is_resume = any(w in t_lower for w in ["resume", "cv", "shekshavali", "amex", "ds_resume", "profile"])
                     
                     if is_resume:
-                        if c:
-                            doc_summaries[t] = f"**Candidate Resume Overview (`{t}`):**\n> {c[:350]}...\n\nThis resume details the candidate's professional software engineering experience, core technical skills, education, and project background."
+                        if is_valid_text:
+                            doc_summaries[t] = (
+                                f"**Candidate Resume Overview (`{t}`):**\n"
+                                f"> {c[:350]}...\n\n"
+                                f"**Profile Summary & Skills:**\n"
+                                f"This document contains candidate details extracted from `{t}` covering software development skills, technical experience, and background."
+                            )
                         else:
-                            doc_summaries[t] = f"**Candidate Profile (`{t}`):**\nThis document is a candidate resume (`{st}`) presenting technical skills, employment experience, educational qualifications, and software projects."
+                            doc_summaries[t] = (
+                                f"⚠️ **Parsing Failure for `{t}`:**\n"
+                                f"The system could not extract printable text from this PDF file (it may contain unparseable image/vector streams or binary encoding). "
+                                f"Please re-upload a text-selectable PDF or plain DOCX version of `{t}` to enable candidate profile extraction."
+                            )
                     else:
-                        if c:
-                            doc_summaries[t] = f"**File Purpose & Summary (`{t}` - `{st}`):**\n> {c[:280]}...\n\nThis file serves as a core workspace resource defining application logic, architecture rules, and functional specifications."
+                        if is_valid_text:
+                            doc_summaries[t] = (
+                                f"**File Purpose & Summary (`{t}` - `{st}`):**\n"
+                                f"> {c[:280]}...\n\n"
+                                f"This file serves as a workspace resource providing functional logic and implementation details."
+                            )
                         else:
-                            doc_summaries[t] = f"The file **{t}** (`{st}`) is an active workspace resource providing application logic and specifications for {t.split('/')[-1]}."
+                            doc_summaries[t] = (
+                                f"⚠️ **Parsing Warning for `{t}`:**\n"
+                                f"No printable text could be extracted from `{t}`. Please verify file format and content readability."
+                            )
 
             if doc_summaries:
                 for idx, (title, text_summary) in enumerate(doc_summaries.items(), 1):
