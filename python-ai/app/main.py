@@ -44,17 +44,13 @@ def validate_and_clean_content(raw_text: str):
         l = line.strip()
         if not l:
             continue
-        # Reject raw PDF object markers, dictionaries, stream keywords
-        if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<", "stream", "endstream"]):
+        # Reject ONLY genuine PDF binary object stream markers
+        if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<", "/Filter /"]):
             continue
-        if l.startswith("<<") or l.endswith(">>") or l.startswith("%") or (l.startswith("/") and ":" not in l):
-            continue
-        if re.search(r'\d+\s+\d+\s+obj', l):
+        if re.search(r'^\d+\s+\d+\s+obj\b', l) or re.search(r'^\/Type\s+\/', l):
             continue
             
-        valid_chars = sum(1 for ch in l if ch.isalnum() or ch in " \t.,-_:;()/'\"@#&$%*+=<>![]{}")
-        if len(l) > 0 and (valid_chars / len(l)) >= 0.70:
-            valid_lines.append(l)
+        valid_lines.append(l)
             
     cleaned = " ".join(valid_lines).strip()
     is_valid = len(cleaned) >= 20 and len(cleaned.split()) >= 3
@@ -756,12 +752,21 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         elif any(w in q_lower for w in ["how it works", "how does it work", "workflow", "flow", "process"]):
             intent_instruction = "The user is asking HOW IT WORKS. Explain the step-by-step workflow, execution logic, and operational process in clear natural language sentences. Do NOT paste code."
         elif any(w in q_lower for w in ["resume", "cv", "candidate", "profile", "experience", "education"]):
-            intent_instruction = "The user is asking about a CANDIDATE RESUME. Summarize the candidate's professional profile, technical skills, work history, education, and key projects in clear natural language sentences."
+            intent_instruction = (
+                "The user is asking about a CANDIDATE RESUME. Structure your response under clear Markdown headers: "
+                "### 👤 Candidate Profile & Summary\n"
+                "### 🛠️ Technical Skills\n"
+                "### 💼 Work Experience & Key Projects\n"
+                "### 🎓 Education & Certifications\n"
+                "### ⭐ Key Strengths & Highlights\n"
+                "Extract and summarize details strictly from the provided text context."
+            )
 
         system_instruction = (
             "You are Insight RAG, an AI-powered internal knowledge assistant for technical teams. "
-            "PRIMARY INSTRUCTION: Answer the user's question using clear, structured, professional, plain English natural language sentences. "
-            "Do NOT display or paste raw code blocks, JSON objects, import statements, or unformatted code fragments UNLESS the user explicitly asks to see code (e.g. 'show code', 'write code', 'display snippet'). "
+            "PRIMARY GROUNDING RULE: Answer the user's question using clear, structured, professional, plain English natural language sentences. "
+            "Your response MUST be generated STRICTLY from the provided file context. "
+            "Do NOT display or paste raw PDF objects (e.g. '3 0 obj', 'stream', 'endstream'), unformatted code fragments, or binary noise. "
             f"{intent_instruction} "
             "CRITICAL CONTEXT RULE: If the user asks about a specific file (e.g. .oxlintrc.json or AMEx_Resume.pdf), "
             "your response MUST focus STRICTLY AND EXCLUSIVELY on the contents of that requested file. Do NOT mix in or cite information from unrelated files. "
