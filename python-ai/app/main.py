@@ -579,7 +579,15 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         "xlsx": ("Excel Spreadsheets", ["excel", "xlsx", "spreadsheet"])
     }
 
-    is_connection_query = any(w in q_clean for w in ["connected", "integrated", "status", "active", "is connected", "connected?", "available", "integration"])
+    is_summary_or_explain_query = any(w in q_clean for w in [
+        "summarise", "summarize", "explain", "overview", "detail", "details", 
+        "describe", "contents", "content", "inside", "key points", "tell me about", "about"
+    ])
+
+    is_connection_query = (
+        not is_summary_or_explain_query and
+        any(w in q_clean for w in ["is connected", "are connected", "connection status", "how many connected", "list connected", "integration status"])
+    )
     
     if is_connection_query:
         for int_key, (display_name, int_keywords) in known_integrations.items():
