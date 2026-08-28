@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import requests
+import httpx
 import time
 import threading
 
@@ -779,36 +780,33 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             }
         }
 
-        for attempt in range(1):
-            try:
-                # Connect and stream response from Gemini API with fast 5s timeout
-                res = requests.post(url, json=payload, stream=True, timeout=5)
-                if res.status_code == 200:
-                    for line in res.iter_lines():
-                        if line:
-                            decoded_line = line.decode('utf-8').strip()
-                            if decoded_line.startswith('data: '):
-                                try:
-                                    chunk_json = json.loads(decoded_line[6:])
-                                    candidates = chunk_json.get("candidates", [{}])
-                                    if candidates and len(candidates) > 0:
-                                        parts = candidates[0].get("content", {}).get("parts", [{}])
-                                        token_text = parts[0].get("text", "")
-                                        if token_text:
-                                            yield f"data: {json.dumps({'event': 'token', 'text': token_text})}\n\n"
-                                except Exception as e:
-                                    print(f"Parser exception: {str(e)}")
-                                    pass
-                    break
-                elif res.status_code in [429, 503]:
-                    # On 429/503 rate limits, instantly stream extracted RAG content from vector store without long delays
-                    api_key = None
-                    break
-                else:
-                    raise Exception(f"Gemini streaming status error: {res.status_code}")
-            except Exception as e:
-                api_key = None
-                break
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                async with client.stream("POST", url, json=payload) as res:
+                    if res.status_code == 200:
+                        async for line in res.aiter_lines():
+                            if line:
+                                decoded_line = line.strip()
+                                if decoded_line.startswith('data: '):
+                                    try:
+                                        chunk_json = json.loads(decoded_line[6:])
+                                        candidates = chunk_json.get("candidates", [{}])
+                                        if candidates and len(candidates) > 0:
+                                            parts = candidates[0].get("content", {}).get("parts", [{}])
+                                            token_text = parts[0].get("text", "")
+                                            if token_text:
+                                                yield f"data: {json.dumps({'event': 'token', 'text': token_text})}\n\n"
+                                                await asyncio.sleep(0.005)
+                                    except Exception as e:
+                                        print(f"Parser exception: {str(e)}")
+                                        pass
+                    elif res.status_code in [429, 503]:
+                        api_key = None
+                    else:
+                        api_key = None
+        except Exception as e:
+            print(f"Async httpx Gemini streaming note: {str(e)}")
+            api_key = None
             
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
