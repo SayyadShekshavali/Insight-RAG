@@ -377,6 +377,7 @@ def delete_document_index(payload: DeleteRequest):
 async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: str = None, integrations: list = None, documents: list = None, chat_history: list = None):
     # Multi-turn conversational context augmentation
     search_query = question
+    target_file_name = None
     if chat_history and len(chat_history) > 1:
         q_lower = question.lower()
         if any(p in q_lower for p in ["them", "it", "those", "all of them", "each of them", "both", "these", "file", "files", "document", "documents", "second", "first", "third", "brief", "detail", "more", "explain"]):
