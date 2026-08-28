@@ -44,6 +44,8 @@ def validate_and_clean_content(raw_text: str):
         l = line.strip()
         if not l:
             continue
+        if l.lower() in ["stream", "endstream", "xref", "startxref", "trailer"]:
+            continue
         # Reject ONLY genuine PDF binary object stream markers
         if any(marker in l for marker in ["%PDF-", "/Linearized", "/FlateDecode", "/DecodeParms", "endobj", "/Type /XRef", "/ID [", "/Index [", "/Prev ", "obj <<", "/Filter /"]):
             continue
