@@ -705,13 +705,15 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     score += 0.25
             reranked_points.append((score, res))
 
-    # Subject Category Isolation (e.g. "Explain about each resumes in brief")
-    # If the user's question asks about resumes/CVs, filter top_matches to include ONLY resume documents!
+    # Subject Category & Entity Isolation
     q_lower_clean = question.lower()
     if any(w in q_lower_clean for w in ["resume", "resumes", "cv", "cvs"]):
         resume_points = [
             pt_tuple[1] for pt_tuple in reranked_points 
-            if pt_tuple[1].payload and any(k in pt_tuple[1].payload.get("title", "").lower() for k in ["resume", "cv", "shekshavali", "amex", "ds_resume", "profile"])
+            if pt_tuple[1].payload and (
+                any(k in pt_tuple[1].payload.get("title", "").lower() for k in ["resume", "cv", "profile"]) or
+                any(w in pt_tuple[1].payload.get("title", "").lower() for w in q_keywords if len(w) > 2)
+            )
         ]
         if resume_points:
             top_matches = resume_points[:6]
@@ -832,10 +834,10 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                 top_matches = matched_pts[:6]
 
         if not top_matches:
-            msg = (
-                "I could not locate relevant text content in the connected workspace documents for your query. "
-                "Please verify that the requested file is uploaded and indexed."
-            )
+            clean_q_terms = [w.strip('?!:;,."\'()[]{}').capitalize() for w in question.split() if len(w) > 2 and w.lower() not in STOP_WORDS]
+            entity_str = " ".join(clean_q_terms[:3]) if clean_q_terms else "the requested item"
+            
+            msg = f"I couldn't find information regarding **{entity_str}** in the connected workspace resources."
             for word in msg.split(" "):
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
