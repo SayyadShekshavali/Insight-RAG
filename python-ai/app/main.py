@@ -798,7 +798,7 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
-        # If top_matches is empty, attempt to match points from all_points by title/keyword
+        # 1. If top_matches is empty, attempt to match points from all_points by title/keyword
         if not top_matches and all_points:
             q_lower_k = [w for w in search_query.lower().split() if len(w) > 2]
             matched_pts = []
@@ -809,6 +809,32 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     matched_pts.append(pt)
             if matched_pts:
                 top_matches = matched_pts[:6]
+
+        # 2. If top_matches is still empty, match from documents payload and extract text directly from disk
+        if not top_matches and documents:
+            q_keywords_clean = [w for w in search_query.lower().split() if len(w) > 2 and w not in STOP_WORDS]
+            class VirtualPoint:
+                def __init__(self, payload):
+                    self.payload = payload
+
+            for d in documents:
+                title = d.get("title", "")
+                fp = d.get("filePath") or d.get("file_path") or ""
+                t_lower = title.lower()
+                if any(k in t_lower for k in q_keywords_clean if k not in ["explain", "about", "summarise", "summarize", "doc", "document", "this"]):
+                    extracted_c = ""
+                    if fp and os.path.exists(fp):
+                        try:
+                            extracted_c = extract_text_from_file(fp, d.get("source_type"))
+                        except Exception:
+                            pass
+                    if extracted_c:
+                        top_matches.append(VirtualPoint({
+                            "title": title,
+                            "content": extracted_c,
+                            "source_type": d.get("source_type", "file"),
+                            "document_id": d.get("document_id", "")
+                        }))
 
         if not top_matches:
             clean_q_terms = [w.strip('?!:;,."\'()[]{}').capitalize() for w in question.split() if len(w) > 2 and w.lower() not in STOP_WORDS]

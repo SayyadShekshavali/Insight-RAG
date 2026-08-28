@@ -260,7 +260,9 @@ export const askAI = async (req, res) => {
     documents: allDocs.map(d => ({
       title: d.title,
       source_type: d.sourceType || 'file',
-      indexing_status: d.indexingStatus || 'indexed'
+      indexing_status: d.indexingStatus || 'indexed',
+      filePath: d.filePath,
+      document_id: d._id ? d._id.toString() : undefined
     })),
     chat_history: chatHistory
   });
