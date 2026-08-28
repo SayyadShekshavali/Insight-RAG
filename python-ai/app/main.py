@@ -407,46 +407,23 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         vector_results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
-            query_filter=q_filter,
-            limit=12
+            limit=20
         )
     except Exception as e:
         traceback.print_exc()
         vector_results = []
 
-    if not vector_results:
-        try:
-            vector_results = qdrant_client.search(
-                collection_name=COLLECTION_NAME,
-                query_vector=query_vector,
-                limit=12
-            )
-        except Exception:
-            pass
-
-    # 2. Local BM25 Keyword Search (30% weight)
+    # 2. Local BM25 Keyword Search across full workspace corpus
     all_points = []
     try:
         all_points, _ = qdrant_client.scroll(
             collection_name=COLLECTION_NAME,
-            scroll_filter=q_filter,
             limit=10000,
             with_payload=True,
             with_vectors=False
         )
     except Exception as e:
         traceback.print_exc()
-
-    if not all_points:
-        try:
-            all_points, _ = qdrant_client.scroll(
-                collection_name=COLLECTION_NAME,
-                limit=10000,
-                with_payload=True,
-                with_vectors=False
-            )
-        except Exception:
-            pass
     unique_docs = {}
     for p in all_points:
         if p.payload and "title" in p.payload:
