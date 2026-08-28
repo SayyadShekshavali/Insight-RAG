@@ -80,44 +80,38 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_PATH = os.getenv("QDRANT_STORAGE_PATH")
 COLLECTION_NAME = "insight_rag"
 
+qdrant_client = None
+
 if QDRANT_HOST:
     print(f"Connecting to Qdrant service at {QDRANT_HOST}...")
-    qdrant_client = None
-    for attempt in range(10):
-        try:
-            if QDRANT_HOST.startswith("http"):
-                qdrant_client = QdrantClient(url=QDRANT_HOST, api_key=QDRANT_API_KEY)
-            else:
-                qdrant_client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT), api_key=QDRANT_API_KEY)
-            # Try to query collections to check health
-            qdrant_client.get_collections()
-            break
-        except Exception as e:
-            print(f"Qdrant connection attempt {attempt+1}/10 failed: {str(e)}")
-            if attempt == 9:
-                raise e
-            time.sleep(2)
-            
-    # Ensure collection exists
     try:
-        qdrant_client.get_collection(COLLECTION_NAME)
-    except Exception:
-        print(f"Creating Qdrant collection: {COLLECTION_NAME}...")
-        qdrant_client.recreate_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=3072, distance=Distance.COSINE)
-        )
-else:
+        if QDRANT_HOST.startswith("http"):
+            qdrant_client = QdrantClient(url=QDRANT_HOST, api_key=QDRANT_API_KEY, timeout=5)
+        else:
+            qdrant_client = QdrantClient(host=QDRANT_HOST, port=int(QDRANT_PORT), api_key=QDRANT_API_KEY, timeout=5)
+        qdrant_client.get_collections()
+        print("Successfully connected to remote Qdrant Cloud service!")
+    except Exception as e:
+        print(f"Remote Qdrant connection error ({str(e)}). Falling back to local storage...")
+        qdrant_client = None
+
+if not qdrant_client:
     QDRANT_PATH = QDRANT_PATH or "./qdrant_storage"
     print(f"Connecting to local disk-based Qdrant at {QDRANT_PATH}...")
     qdrant_client = QdrantClient(path=QDRANT_PATH)
+
+# Ensure collection exists
+try:
+    qdrant_client.get_collection(COLLECTION_NAME)
+except Exception:
+    print(f"Creating Qdrant collection: {COLLECTION_NAME}...")
     try:
-        qdrant_client.get_collection(COLLECTION_NAME)
-    except Exception:
         qdrant_client.recreate_collection(
             collection_name=COLLECTION_NAME,
             vectors_config=VectorParams(size=3072, distance=Distance.COSINE)
         )
+    except Exception as e:
+        print(f"Collection setup note: {str(e)}")
 
 class AskRequest(BaseModel):
     question: str
