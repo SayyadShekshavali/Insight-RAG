@@ -819,44 +819,23 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
             
     # Local fallback summary if no key or no matches found
     if not api_key or not top_matches:
-        # Check if the query asked for a specific file keyword (like "amex")
-        target_file_keywords = [k for k in q_keywords if len(k) > 2 and k not in ["file", "files", "document", "documents", "pdf", "repo", "code"]]
-        matched_docs = []
-        if target_file_keywords:
-            seen_titles = set()
-            for d in (documents or []):
-                t = d.get("title", "")
-                if t and t not in seen_titles and any(k in t.lower() for k in target_file_keywords):
-                    seen_titles.add(t)
-                    matched_docs.append(d)
+        # If top_matches is empty, attempt to match points from all_points by title/keyword
+        if not top_matches and all_points:
+            q_lower_k = [w for w in search_query.lower().split() if len(w) > 2]
+            matched_pts = []
+            for pt in all_points:
+                if not pt.payload: continue
+                pt_t = pt.payload.get("title", "").lower()
+                if any(k in pt_t for k in q_lower_k if k not in ["explain", "about", "summarise", "summarize", "doc", "document", "this"]):
+                    matched_pts.append(pt)
+            if matched_pts:
+                top_matches = matched_pts[:6]
 
-        if target_file_keywords and not matched_docs:
-            req_name = target_file_keywords[0].upper()
-            lines = [f"The document matching **\"{req_name}\"** is not currently uploaded in your connected workspace documents.\n"]
-            if documents:
-                lines.append("Here are the active workspace documents currently available in your system:")
-                seen = set()
-                for d in documents:
-                    t = d.get("title")
-                    if t and t not in seen:
-                        seen.add(t)
-                        lines.append(f"- **{t}** (`{d.get('source_type', 'file').upper()}`)")
-            msg = "\n\n".join(lines)
-            for word in msg.split(" "):
-                yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
-                await asyncio.sleep(0.01)
-        elif not top_matches:
-            if matched_docs:
-                lines = [f"Here is the workspace document information for **\"{question}\"**:\n"]
-                for md in matched_docs[:3]:
-                    lines.append(f"The document **{md.get('title')}** (`{md.get('source_type', 'file').upper()}`) is an active workspace document.")
-                msg = "\n\n".join(lines)
-            else:
-                msg = (
-                    "I could not locate relevant information in the connected workspace documents to answer your question. "
-                    "Could you please elaborate more on your question or specify what detail you need so I can search better?"
-                )
-
+        if not top_matches:
+            msg = (
+                "I could not locate relevant text content in the connected workspace documents for your query. "
+                "Please verify that the requested file is uploaded and indexed."
+            )
             for word in msg.split(" "):
                 yield f"data: {json.dumps({'event': 'token', 'text': word + ' '})}\n\n"
                 await asyncio.sleep(0.01)
@@ -876,10 +855,10 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     if is_resume:
                         if is_valid_text:
                             doc_summaries[t] = (
-                                f"**Candidate Resume Overview (`{t}`):**\n"
-                                f"> {c[:350]}...\n\n"
-                                f"**Profile Summary & Skills:**\n"
-                                f"This document contains candidate details extracted from `{t}` covering software development skills, technical experience, and background."
+                                f"### 👤 Candidate Resume Overview (`{t}`)\n"
+                                f"> {c[:450]}...\n\n"
+                                f"### 🛠️ Technical Skills & Background\n"
+                                f"This document presents candidate details extracted from `{t}` covering software engineering experience, core technical stack, and software projects."
                             )
                         else:
                             doc_summaries[t] = (
@@ -890,9 +869,9 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                     else:
                         if is_valid_text:
                             doc_summaries[t] = (
-                                f"**File Purpose & Summary (`{t}` - `{st}`):**\n"
-                                f"> {c[:280]}...\n\n"
-                                f"This file serves as a workspace resource providing functional logic and implementation details."
+                                f"### 📁 File Purpose & Summary (`{t}` - `{st}`)\n"
+                                f"> {c[:350]}...\n\n"
+                                f"This file serves as a core workspace resource providing functional logic and implementation details."
                             )
                         else:
                             doc_summaries[t] = (
