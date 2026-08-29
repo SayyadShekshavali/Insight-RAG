@@ -602,8 +602,9 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
         "the", "and", "in", "of", "to", "a", "an", "is", "are", "for", "on", "or", "by", "at", 
         "explain", "about", "what", "where", "this", "that", "show", "tell", "does", "with", 
         "from", "have", "repo", "github", "file", "files", "how", "main", "key", "point", 
-        "points", "inside", "content", "contents", "summary", "overview", "detail", "details", 
-        "describe", "give", "list", "code", "codebase"
+        "points", "inside", "content", "contents", "summary", "summarise", "summarize", "doc", 
+        "document", "documents", "pdf", "pdfs", "overview", "detail", "details", "describe", 
+        "give", "list", "code", "codebase", "find", "search", "lookup"
     ])
     q_raw_words = re.findall(r'[a-zA-Z0-9_\-\./()]+', search_query.lower())
     q_keywords = [w.strip('?!:;,."\'()[]{}').lower() for w in q_raw_words if len(w.strip('?!:;,."\'()[]{}')) > 2 and w.strip('?!:;,."\'()[]{}').lower() not in STOP_WORDS]
@@ -835,6 +836,40 @@ async def execute_hybrid_rag_streaming(question: str, org_id: str, document_id: 
                             "source_type": d.get("source_type", "file"),
                             "document_id": d.get("document_id", "")
                         }))
+
+        # 3. If top_matches is still empty, scan server uploads directory for matching files on disk
+        if not top_matches:
+            uploads_dirs = [
+                os.path.join(os.getcwd(), "..", "server", "uploads"),
+                os.path.join(os.getcwd(), "server", "uploads"),
+                r"c:\Insight RAG\server\uploads",
+                "/opt/render/project/src/server/uploads"
+            ]
+            q_keywords_clean = [w for w in search_query.lower().split() if len(w) > 2 and w not in STOP_WORDS]
+            
+            for u_dir in uploads_dirs:
+                if os.path.exists(u_dir):
+                    try:
+                        for fname in os.listdir(u_dir):
+                            fname_lower = fname.lower()
+                            if any(k in fname_lower for k in q_keywords_clean if k not in ["explain", "about", "summarise", "summarize", "doc", "document", "this"]):
+                                fpath = os.path.join(u_dir, fname)
+                                ext = os.path.splitext(fname)[1].lower()
+                                stype = "pdf" if ext == ".pdf" else ("docx" if ext in [".docx", ".doc"] else "file")
+                                extracted_c = extract_text_from_file(fpath, stype)
+                                if extracted_c and len(extracted_c.strip()) > 20:
+                                    clean_title = fname.split("-")[-1] if "-" in fname else fname
+                                    top_matches.append(VirtualPoint({
+                                        "title": clean_title,
+                                        "content": extracted_c,
+                                        "source_type": stype,
+                                        "document_id": fname
+                                    }))
+                                    break
+                    except Exception as e:
+                        print(f"Uploads scan note: {str(e)}")
+                if top_matches:
+                    break
 
         if not top_matches:
             clean_q_terms = [w.strip('?!:;,."\'()[]{}').capitalize() for w in question.split() if len(w) > 2 and w.lower() not in STOP_WORDS]
